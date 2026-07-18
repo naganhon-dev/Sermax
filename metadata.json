@@ -1,0 +1,6 @@
+{
+  "name": "Рабочий дашборд",
+  "description": "Внутренний инструмент, заменяющий 8 Google Таблиц.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
