@@ -4,12 +4,12 @@ import { getFirestore } from 'firebase/firestore';
 
 // Вставьте значения из консоли Firebase
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyBbsTT0pEz0QakLtfJRBxR6R-rPdPwYN3g",
+  authDomain: "work-dashboardsermax.firebaseapp.com",
+  projectId: "work-dashboardsermax",
+  storageBucket: "work-dashboardsermax.firebasestorage.app",
+  messagingSenderId: "308601780307",
+  appId: "1:308601780307:web:e894db040c02e3dca52ea6"
 };
 
 export const isFirebaseConfigured = firebaseConfig.apiKey !== "";
