@@ -61,6 +61,8 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
             order: sIndex,
             merges: sheet.merges || [],
             colWidths: sheet.colWidths || {},
+            frozenCols: sheet.frozenCols || 0,
+            styles: sheet.styles || [],
             chunkCount
           });
           batchSize++;
@@ -103,7 +105,7 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
     <div className="flex flex-col items-center justify-center min-h-[60vh] bg-white rounded-xl shadow border border-gray-200 p-8 m-8">
       <h2 className="text-2xl font-semibold mb-4">Импорт данных</h2>
       <p className="text-gray-500 mb-8 text-center max-w-md">
-        В базе данных нет вкладок. Пожалуйста, выделите 9 JSON-файлов (manifest.json и 8 файлов вкладок) и перетащите их сюда.
+        Пожалуйста, выделите JSON-файлы (manifest.json и файлы вкладок) и перетащите их сюда.
       </p>
 
       {loading ? (

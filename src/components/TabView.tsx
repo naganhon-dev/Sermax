@@ -8,7 +8,7 @@ import { useNetworkState } from 'react-use';
 import { exportAllData } from '../lib/exportUtils';
 
 export default function TabView({ tabId, targetSheetId, targetRowIdx }: { tabId: string, targetSheetId?: string, targetRowIdx?: number }) {
-  const { sheets, loading, isCalculating, error, hf, hfVersion, sheetMatrices, updateCell, addRow } = useTabEngine(tabId);
+  const { sheets, loading, isCalculating, error, hf, hfVersion, sheetMatrices, updateCell, batchUpdate, undo, redo, addRow } = useTabEngine(tabId);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(targetSheetId || null);
   const [showHidden, setShowHidden] = useState(false);
   const network = useNetworkState();
@@ -138,6 +138,9 @@ export default function TabView({ tabId, targetSheetId, targetRowIdx }: { tabId:
              hfVersion={hfVersion} 
              sheetMatrix={sheetMatrices[activeSheet.id] || []}
              onCellEdit={(row, col, value) => updateCell(activeSheet.id, activeSheet.name, row, col, value)}
+          onCellsEdit={(updates) => batchUpdate(activeSheet.id, activeSheet.name, updates)}
+          undo={undo}
+          redo={redo}
              targetRowIdx={targetRowIdx}
           />
         )}

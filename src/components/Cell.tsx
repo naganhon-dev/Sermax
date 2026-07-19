@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { CellValue } from '../types';
+import { CellValue, StyleData } from '../types';
 import { HyperFormula, CellError } from 'hyperformula';
 
 interface CellProps {
@@ -9,9 +9,13 @@ interface CellProps {
   hf: HyperFormula | null;
   hfVersion: number; // to trigger re-render on HF updates
   rawVal: CellValue;
+  cellStyle?: StyleData;
   rowSpan?: number;
   colSpan?: number;
   isActive: boolean;
+  isSelected?: boolean;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onPointerEnter?: (e: React.PointerEvent) => void;
   isEditing: boolean;
   editValue: string;
   setEditValue: (val: string) => void;
@@ -21,11 +25,22 @@ interface CellProps {
 }
 
 export const Cell = memo(({
-  r, c, sheetId, hf, hfVersion, rawVal,
+  r, c, sheetId, hf, hfVersion, rawVal, cellStyle,
   rowSpan = 1, colSpan = 1,
-  isActive, isEditing, editValue,
+  isActive, isSelected, isEditing, editValue, onPointerDown, onPointerEnter,
   setEditValue, saveEdit, startEdit, setActiveCell
 }: CellProps) => {
+  const customStyles: React.CSSProperties = {};
+  if (cellStyle) {
+    if (cellStyle.bg) customStyles.backgroundColor = '#' + cellStyle.bg;
+    if (cellStyle.fc) customStyles.color = '#' + cellStyle.fc;
+    if (cellStyle.b) customStyles.fontWeight = 'bold';
+    if (cellStyle.i) customStyles.fontStyle = 'italic';
+    if (cellStyle.ha === 'c') customStyles.textAlign = 'center';
+    else if (cellStyle.ha === 'r') customStyles.textAlign = 'right';
+    if (cellStyle.w) customStyles.whiteSpace = 'normal';
+  }
+
   let displayValue = '';
   let isDateFormat = false;
   
@@ -89,7 +104,9 @@ export const Cell = memo(({
     <td 
       rowSpan={rowSpan}
       colSpan={colSpan}
-      className={`border-b border-r border-slate-200 p-1 truncate relative ${isActive ? 'ring-2 ring-blue-500 ring-inset ring-opacity-100 z-10 bg-blue-50' : ''} ${isNumber ? 'font-mono' : ''} ${isFormula && !isActive ? 'bg-blue-50/30' : ''}`}
+      onPointerDown={onPointerDown}
+      onPointerEnter={onPointerEnter}
+      className={`border-b border-r ${isSelected ? 'bg-blue-100/50 mix-blend-multiply' : ''}  border-slate-300 p-1 ${cellStyle?.w ? 'break-words' : 'truncate'} relative ${isActive ? 'ring-2 ring-blue-500 ring-inset ring-opacity-100 z-10 bg-blue-50' : ''} ${isNumber && !cellStyle?.b ? 'font-mono' : ''} ${isFormula && !isActive ? 'bg-blue-50/30' : ''}`} style={customStyles}
       onClick={() => {
         if (isActive && !isEditing) {
           startEdit(r, c);
@@ -112,7 +129,7 @@ export const Cell = memo(({
           onBlur={() => saveEdit()}
         />
       ) : (
-        <span className={`${displayValue.startsWith('#') ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
+        <span className={`${displayValue.startsWith('#') ? 'text-red-500 font-bold' : 'text-inherit'}`}>
           {displayValue}
         </span>
       )}

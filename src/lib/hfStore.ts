@@ -1,13 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, query, orderBy, onSnapshot, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { SheetData, ChunkData, CellValue } from '../types';
+import { SheetData, ChunkData, CellValue, RowData } from '../types';
+import { getCellsFromRow } from './gridUtils';
 import { HyperFormula } from 'hyperformula';
 import ruRU from 'hyperformula/i18n/languages/ruRU';
 
 HyperFormula.registerLanguage('ru', ruRU);
 
+
+type Action = { sheetId: string; changes: {r: number, c: number, oldVal: any, newVal: any}[] };
+const undoStack: Action[] = [];
+const redoStack: Action[] = [];
+
 export function useTabEngine(tabId: string) {
+
   const [sheets, setSheets] = useState<SheetData[]>([]);
 
   const [loading, setLoading] = useState(true);
@@ -17,7 +24,7 @@ export function useTabEngine(tabId: string) {
   const [hfVersion, setHfVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const sheetMatricesRef = useRef<Record<string, CellValue[][]>>({});
+  const sheetMatricesRef = useRef<Record<string, RowData[]>>({});
   const chunkHashesRef = useRef<Record<string, Record<string, string>>>({}); // tabId_sheetId -> chunkId -> hash
 
   useEffect(() => {
@@ -35,11 +42,11 @@ export function useTabEngine(tabId: string) {
         if (!isMounted) return;
         setSheets(sData);
 
-        const allMatrices: Record<string, CellValue[][]> = {};
+        const allMatrices: Record<string, RowData[]> = {};
         const hashes: Record<string, Record<string, string>> = {};
         
         for (const sheet of sData) {
-          const matrix: CellValue[][] = [];
+          const matrix: RowData[] = [];
           hashes[sheet.id] = {};
           for (let c = 0; c < sheet.chunkCount; c++) {
             const snap = await getDocs(query(collection(db, `tabs/${tabId}/sheets/${sheet.id}/chunks`)));
@@ -78,7 +85,7 @@ export function useTabEngine(tabId: string) {
             const sheetId = hf.getSheetId(sheet.name);
             if (sheetId !== undefined) {
                const hfData = allMatrices[sheet.id].map(row => 
-                 row.map(cell => {
+                 getCellsFromRow(row).map(cell => {
                    if (cell && typeof cell === 'object' && 'f' in cell) {
                      return cell.f;
                    }
@@ -121,8 +128,11 @@ export function useTabEngine(tabId: string) {
                         }
                         sheetMatricesRef.current[sheet.id][rowIndex] = parsed[i];
                         
+                        
                         if (sheetIdHf !== undefined) {
-                          const rowHfData = parsed[i].map((c: any) => (c && typeof c === 'object' && 'f' in c) ? c.f : c);
+                          const cells = getCellsFromRow(parsed[i]);
+                          const rowHfData = cells.map((c: any) => (c && typeof c === 'object' && 'f' in c) ? c.f : c);
+((c: any) => (c && typeof c === 'object' && 'f' in c) ? c.f : c);
                           for(let col = 0; col < rowHfData.length; col++) {
                              hfRef.current?.setCellContents({ sheet: sheetIdHf, col, row: rowIndex }, [[rowHfData[col]]]);
                           }
@@ -151,6 +161,98 @@ export function useTabEngine(tabId: string) {
     };
   }, [tabId]);
 
+  
+  const batchUpdate = async (sheetId: string, sheetName: string, updates: {r: number, c: number, v: any}[], saveHistory = true) => {
+    if (!hfRef.current) return;
+    const hfSheetId = hfRef.current.getSheetId(sheetName);
+    if (hfSheetId === undefined) return;
+
+    const action: Action = { sheetId, changes: [] };
+    
+    // Group updates by chunk
+    const chunkUpdates: Record<number, any[]> = {};
+    let changed = false;
+
+    for (const u of updates) {
+       const oldVal = sheetMatricesRef.current[sheetId]?.[u.r]?.[u.c] || null;
+       action.changes.push({ r: u.r, c: u.c, oldVal, newVal: u.v });
+       
+       hfRef.current.setCellContents({ sheet: hfSheetId, col: u.c, row: u.r }, [[u.v]]);
+       changed = true;
+
+       let rowData = sheetMatricesRef.current[sheetId][u.r];
+       if (!rowData) {
+         rowData = [];
+         sheetMatricesRef.current[sheetId][u.r] = rowData;
+       }
+       
+       let cellObj: CellValue = u.v;
+       if (typeof u.v === 'string' && u.v.startsWith('=')) {
+          cellObj = { f: u.v, v: hfRef.current.getCellValue({ sheet: hfSheetId, col: u.c, row: u.r }) };
+       }
+       
+       const oldCells = Array.isArray(rowData) ? rowData : (rowData.c || []);
+       const oldCell = oldCells[u.c];
+       if (oldCell && typeof oldCell === 'object' && !Array.isArray(oldCell) && 's' in oldCell) {
+          if (typeof cellObj !== 'object' || cellObj === null) {
+             cellObj = { v: cellObj, s: oldCell.s };
+          } else {
+             cellObj.s = oldCell.s;
+          }
+       }
+       
+       if (!Array.isArray(rowData)) {
+         if (!rowData.c) rowData.c = [];
+         rowData.c[u.c] = cellObj;
+       } else {
+         rowData[u.c] = cellObj;
+       }
+
+       const chunkIndex = Math.floor(u.r / 100);
+       chunkUpdates[chunkIndex] = chunkUpdates[chunkIndex] || sheetMatricesRef.current[sheetId].slice(chunkIndex * 100, chunkIndex * 100 + 100);
+    }
+    
+    if (changed) setHfVersion(v => v + 1);
+    
+    if (saveHistory && action.changes.length > 0) {
+      undoStack.push(action);
+      redoStack.length = 0; // clear redo
+    }
+
+    // Save to firebase
+    for (const chunkIdxStr of Object.keys(chunkUpdates)) {
+       const chunkData = chunkUpdates[chunkIdxStr as any];
+       for(let i=0; i<chunkData.length; i++) {
+          if(!chunkData[i]) chunkData[i] = [];
+       }
+       const dataStr = JSON.stringify(chunkData);
+       if (!chunkHashesRef.current[sheetId]) chunkHashesRef.current[sheetId] = {};
+       chunkHashesRef.current[sheetId][chunkIdxStr] = dataStr;
+       const chunkRef = doc(db, `tabs/${tabId}/sheets/${sheetId}/chunks`, chunkIdxStr);
+       updateDoc(chunkRef, { data: dataStr }).catch(console.error);
+    }
+  };
+
+  const undo = () => {
+    const action = undoStack.pop();
+    if (!action) return;
+    const sheetInfo = sheets.find(s => s.id === action.sheetId);
+    if (!sheetInfo) return;
+    const revertUpdates = action.changes.map(c => ({r: c.r, c: c.c, v: c.oldVal}));
+    redoStack.push(action);
+    batchUpdate(action.sheetId, sheetInfo.name, revertUpdates, false);
+  };
+
+  const redo = () => {
+    const action = redoStack.pop();
+    if (!action) return;
+    const sheetInfo = sheets.find(s => s.id === action.sheetId);
+    if (!sheetInfo) return;
+    const reapplyUpdates = action.changes.map(c => ({r: c.r, c: c.c, v: c.newVal}));
+    undoStack.push(action);
+    batchUpdate(action.sheetId, sheetInfo.name, reapplyUpdates, false);
+  };
+
   const updateCell = async (sheetId: string, sheetName: string, row: number, col: number, value: any) => {
     if (!hfRef.current) return;
     
@@ -159,15 +261,36 @@ export function useTabEngine(tabId: string) {
     hfRef.current.setCellContents({ sheet: hfSheetId, col, row }, [[value]]);
     setHfVersion(v => v + 1);
 
-    if (!sheetMatricesRef.current[sheetId][row]) {
-      sheetMatricesRef.current[sheetId][row] = [];
+    
+    let rowData = sheetMatricesRef.current[sheetId][row];
+    if (!rowData) {
+      rowData = [];
+      sheetMatricesRef.current[sheetId][row] = rowData;
     }
     
     let cellObj: CellValue = value;
     if (typeof value === 'string' && value.startsWith('=')) {
        cellObj = { f: value, v: hfRef.current.getCellValue({ sheet: hfSheetId, col, row }) };
     }
-    sheetMatricesRef.current[sheetId][row][col] = cellObj;
+    
+    // Preserve style if cell had one
+    const oldCells = Array.isArray(rowData) ? rowData : (rowData.c || []);
+    const oldCell = oldCells[col];
+    if (oldCell && typeof oldCell === 'object' && !Array.isArray(oldCell) && 's' in oldCell) {
+       if (typeof cellObj !== 'object' || cellObj === null) {
+          cellObj = { v: cellObj, s: oldCell.s };
+       } else {
+          cellObj.s = oldCell.s;
+       }
+    }
+    
+    if (!Array.isArray(rowData)) {
+      if (!rowData.c) rowData.c = [];
+      rowData.c[col] = cellObj;
+    } else {
+      rowData[col] = cellObj;
+    }
+
 
     const chunkIndex = Math.floor(row / 100);
     const chunkStart = chunkIndex * 100;
@@ -230,5 +353,5 @@ export function useTabEngine(tabId: string) {
     }
   };
 
-  return { sheets, loading, isCalculating, error, hf: hfRef.current, hfVersion, sheetMatrices: sheetMatricesRef.current, updateCell, addRow };
+  return { sheets, loading, isCalculating, error, hf: hfRef.current, hfVersion, sheetMatrices: sheetMatricesRef.current, updateCell, batchUpdate, undo, redo, addRow };
 }
