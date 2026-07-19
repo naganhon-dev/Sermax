@@ -57,7 +57,8 @@ const MONTHS = ['Январь','Февраль','Март','Апрель','Ма�
 function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[] }) {
   const catCalls = useMemo(() => allCalls.filter(c => c.categoryId === category.id), [allCalls, category.id]);
   const isMonthly = category.monthly !== false;
-  const leadFields = category.leadFields || ['ФИО'];
+  const rawLeadFields = category.leadFields || ['ФИО'];
+  const lf = Array.isArray(rawLeadFields) ? rawLeadFields : (rawLeadFields ? [String(rawLeadFields)] : []);
   const [selectedCell, setSelectedCell] = useState<{rowId: string, month: string} | null>(null);
 
   const [search, setSearch] = useState('');
@@ -65,8 +66,8 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
   const filtered = useMemo(() => {
     if (!search) return catCalls;
     const q = search.toLowerCase();
-    return catCalls.filter(c => leadFields.some((f:string) => (c[f]||'').toLowerCase().includes(q)));
-  }, [catCalls, search, leadFields]);
+    return catCalls.filter(c => lf.some((f:string) => String(c[f] ?? '').toLowerCase().includes(q)));
+  }, [catCalls, search, lf]);
 
   if (!isMonthly) {
     return (
@@ -76,14 +77,14 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
          <table className="w-full text-left border-collapse text-sm">
            <thead>
              <tr className="border-b-2 border-gray-200">
-               {leadFields.map((f:string) => <th key={f} className="py-2 px-2">{f}</th>)}
+               {lf.map((f:string) => <th key={f} className="py-2 px-2">{f}</th>)}
                {category.metrics?.map((m:string) => <th key={m} className="py-2 px-2">{m}</th>)}
              </tr>
            </thead>
            <tbody>
              {filtered.map(c => (
                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
-                 {leadFields.map((f:string) => <td key={f} className="py-1.5 px-2">{c[f]}</td>)}
+                 {lf.map((f:string) => <td key={f} className="py-1.5 px-2">{c[f]}</td>)}
                  {category.metrics?.map((m:string) => <td key={m} className="py-1.5 px-2 text-gray-500">{c[m]}</td>)}
                </tr>
              ))}
@@ -99,7 +100,13 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
        <div className="p-4 border-b border-gray-200 bg-white">
          <div className="flex justify-between items-center mb-2">
             <h2 className="text-xl font-bold">{category['название']}</h2>
-            <button className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700">
+            <button 
+              onClick={async () => {
+                const newRow = { categoryId: category.id };
+                await createRecord('calls', newRow);
+              }}
+              className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700"
+            >
               <Plus className="w-4 h-4"/> Добавить строку
             </button>
          </div>
@@ -120,7 +127,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
          <table className="w-full text-left border-collapse text-sm">
            <thead className="bg-gray-50 sticky top-0 shadow-sm z-0">
              <tr>
-               {leadFields.map((f:string) => <th key={f} className="py-2 px-2 border-r border-gray-200">{f}</th>)}
+               {lf.map((f:string) => <th key={f} className="py-2 px-2 border-r border-gray-200">{f}</th>)}
                {MONTHS.map(m => <th key={m} className="py-2 px-2 text-center border-r border-gray-200 min-w-[80px]">{m}</th>)}
                <th className="py-2 px-2 text-center bg-gray-100">Итог за год</th>
              </tr>
@@ -131,7 +138,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
                 let yMins = 0;
                 return (
                  <tr key={row.id} className="border-b border-gray-200 hover:bg-gray-50">
-                   {leadFields.map((f:string, i:number) => (
+                   {lf.map((f:string, i:number) => (
                      <td key={f} className={`py-1.5 px-2 border-r border-gray-200 relative ${i===0?'font-medium':''}`}>
                        {i===0 && row._color && <div className="absolute left-0 top-0 bottom-0 w-1" style={{backgroundColor: row._color}} />}
                        {row[f]}
@@ -179,6 +186,11 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
 }
 
 function CellPopover({ row, month, category, onClose }: { row: any, month: string, category: any, onClose: () => void }) {
+  if (!row) {
+    onClose();
+    return null;
+  }
+
   const mData = row[month] || {};
   const [data, setData] = useState({ ...mData });
 

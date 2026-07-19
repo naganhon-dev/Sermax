@@ -8,6 +8,7 @@ export default function WebinarsTab() {
   const { data: themes } = useCollection('webinar_themes');
 
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showThemes, setShowThemes] = useState(false);
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -41,7 +42,7 @@ export default function WebinarsTab() {
                 <span>{t['Тема']}</span>
              </div>
            ))}
-           <button className="text-amber-600 text-xs underline">Редактировать темы</button>
+           <button onClick={() => setShowThemes(true)} className="text-amber-600 text-xs underline">Редактировать темы</button>
          </div>
       </div>
 
@@ -50,6 +51,7 @@ export default function WebinarsTab() {
            <WebinarsList view={view} events={events} onSelect={setSelectedEvent} />
          </div>
          {selectedEvent && <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
+         {showThemes && <ThemesPanel themes={themes} onClose={() => setShowThemes(false)} />}
       </div>
     </div>
   );
@@ -177,6 +179,57 @@ function EventPanel({ event, onClose }: { event: any, onClose: () => void }) {
            <button onClick={del} className="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-sm flex items-center gap-1"><Trash2 className="w-4 h-4"/> Удалить</button>
         ) : <div/>}
         <button onClick={save} className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">Сохранить</button>
+      </div>
+    </div>
+  );
+}
+
+function ThemesPanel({ themes, onClose }: { themes: any[], onClose: () => void }) {
+  const addTheme = () => {
+    const month = prompt("Введите месяц:");
+    if (month) {
+      createRecord('webinar_themes', { 'Месяц': month, 'Тема': '' });
+    }
+  };
+
+  return (
+    <div className="w-96 border-l border-gray-200 bg-white shadow-xl flex flex-col z-10 absolute right-0 top-0 bottom-0">
+      <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+        <h3 className="font-bold text-lg">Темы месяцев</h3>
+        <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded"><X className="w-5 h-5"/></button>
+      </div>
+      <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+        {themes.map(t => (
+          <div key={t.id} className="border border-gray-200 rounded p-3 relative group bg-gray-50">
+            <button 
+              onClick={() => { if(confirm("Удалить тему?")) deleteRecord('webinar_themes', t.id, t); }} 
+              className="absolute top-2 right-2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
+            >
+              <Trash2 className="w-4 h-4"/>
+            </button>
+            <div className="mb-2">
+              <label className="text-xs font-medium text-gray-500">Месяц</label>
+              <input 
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white" 
+                value={t['Месяц'] || ''} 
+                onChange={e => updateRecord('webinar_themes', t.id, { 'Месяц': e.target.value })} 
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500">Тема</label>
+              <textarea 
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white h-16" 
+                value={t['Тема'] || ''} 
+                onChange={e => updateRecord('webinar_themes', t.id, { 'Тема': e.target.value })} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+        <button onClick={addTheme} className="bg-amber-100 text-amber-800 px-3 py-1.5 rounded text-sm font-medium hover:bg-amber-200 flex items-center gap-1">
+          <Plus className="w-4 h-4" /> Добавить
+        </button>
       </div>
     </div>
   );
