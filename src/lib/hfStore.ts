@@ -11,17 +11,20 @@ export function useTabEngine(tabId: string) {
   const [sheets, setSheets] = useState<SheetData[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [isCalculating, setIsCalculating] = useState(false);
+  
   const hfRef = useRef<HyperFormula | null>(null);
-  const [hfVersion, setHfVersion] = useState(0); // trigger re-renders
+  const [hfVersion, setHfVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Store raw matrix per sheet to diff remote changes or to render
   const sheetMatricesRef = useRef<Record<string, CellValue[][]>>({});
+  const chunkHashesRef = useRef<Record<string, Record<string, string>>>({}); // tabId_sheetId -> chunkId -> hash
 
   useEffect(() => {
     if (!tabId) return;
     setLoading(true);
     let unsubChunks: (() => void)[] = [];
+    let isMounted = true;
 
     const init = async () => {
       try {
@@ -29,94 +32,111 @@ export function useTabEngine(tabId: string) {
         const snapSheets = await getDocs(qSheets);
         const sData: SheetData[] = [];
         snapSheets.forEach(d => sData.push({ id: d.id, ...d.data() } as SheetData));
+        if (!isMounted) return;
         setSheets(sData);
 
-        // Fetch all chunks for all sheets initially
         const allMatrices: Record<string, CellValue[][]> = {};
+        const hashes: Record<string, Record<string, string>> = {};
         
         for (const sheet of sData) {
           const matrix: CellValue[][] = [];
+          hashes[sheet.id] = {};
           for (let c = 0; c < sheet.chunkCount; c++) {
             const snap = await getDocs(query(collection(db, `tabs/${tabId}/sheets/${sheet.id}/chunks`)));
             snap.forEach(chunkDoc => {
                const chunk = chunkDoc.data() as ChunkData;
+               hashes[sheet.id][chunkDoc.id] = chunk.data;
                const parsed = JSON.parse(chunk.data);
-               // Ensure matrix accommodates this chunk
                for(let i = 0; i < parsed.length; i++) {
                  matrix[chunk.start + i] = parsed[i];
                }
             });
           }
-          // fill undefined rows with empty arrays
           for(let i=0; i<matrix.length; i++) {
             if (!matrix[i]) matrix[i] = [];
           }
           allMatrices[sheet.id] = matrix;
         }
 
+        if (!isMounted) return;
         sheetMatricesRef.current = allMatrices;
+        chunkHashesRef.current = hashes;
+        setLoading(false); // UI can render now with raw cached values
 
-        // Initialize HyperFormula
-        const hf = HyperFormula.buildEmpty({
-          licenseKey: 'gpl-v3',
-          dateFormats: ['DD.MM.YYYY', 'YYYY-MM-DD', 'YYYY-MM-DD hh:mm'],
-          localeLang: 'ru'
-        });
+        setIsCalculating(true);
+        // Defer HF initialization to not block the main thread immediately
+        setTimeout(() => {
+          if (!isMounted) return;
+          const hf = HyperFormula.buildEmpty({
+            licenseKey: 'gpl-v3',
+            dateFormats: ['DD.MM.YYYY', 'YYYY-MM-DD', 'YYYY-MM-DD hh:mm'],
+            localeLang: 'ru'
+          });
 
-        // Add sheets and data to HF
-        for (const sheet of sData) {
-          hf.addSheet(sheet.name);
-          const sheetId = hf.getSheetId(sheet.name);
-          if (sheetId !== undefined) {
-             const hfData = allMatrices[sheet.id].map(row => 
-               row.map(cell => {
-                 if (cell && typeof cell === 'object' && 'f' in cell) {
-                   return cell.f; // Pass formula to HF
-                 }
-                 return cell; // primitive
-               })
-             );
-             hf.setSheetContent(sheetId, hfData);
+          for (const sheet of sData) {
+            hf.addSheet(sheet.name);
+            const sheetId = hf.getSheetId(sheet.name);
+            if (sheetId !== undefined) {
+               const hfData = allMatrices[sheet.id].map(row => 
+                 row.map(cell => {
+                   if (cell && typeof cell === 'object' && 'f' in cell) {
+                     return cell.f;
+                   }
+                   return cell;
+                 })
+               );
+               hf.setSheetContent(sheetId, hfData);
+            }
           }
-        }
-        
-        hfRef.current = hf;
-        setHfVersion(v => v + 1);
+          
+          hfRef.current = hf;
+          setHfVersion(v => v + 1);
+          setIsCalculating(false);
 
-        // Setup real-time listeners for chunks
-        for (const sheet of sData) {
-           unsubChunks.push(
-             onSnapshot(collection(db, `tabs/${tabId}/sheets/${sheet.id}/chunks`), (snapshot) => {
-               let changed = false;
-               snapshot.docChanges().forEach(change => {
-                 if (change.type === 'modified' || change.type === 'added') {
-                    const chunk = change.doc.data() as ChunkData;
-                    const parsed = JSON.parse(chunk.data);
-                    const sheetIdHf = hfRef.current?.getSheetId(sheet.name);
-                    
-                    if (sheetIdHf !== undefined) {
+          // Setup real-time listeners for chunks after HF is ready
+          for (const sheet of sData) {
+             unsubChunks.push(
+               onSnapshot(collection(db, `tabs/${tabId}/sheets/${sheet.id}/chunks`), (snapshot) => {
+                 let changed = false;
+                 snapshot.docChanges().forEach(change => {
+                   if (change.type === 'modified' || change.type === 'added') {
+                      const chunk = change.doc.data() as ChunkData;
+                      
+                      // Skip if this change matches our local state (we wrote it)
+                      if (chunkHashesRef.current[sheet.id]?.[change.doc.id] === chunk.data) {
+                        return;
+                      }
+                      
+                      // Update hash
+                      if (!chunkHashesRef.current[sheet.id]) chunkHashesRef.current[sheet.id] = {};
+                      chunkHashesRef.current[sheet.id][change.doc.id] = chunk.data;
+
+                      const parsed = JSON.parse(chunk.data);
+                      const sheetIdHf = hfRef.current?.getSheetId(sheet.name);
+                      
                       for (let i = 0; i < parsed.length; i++) {
                         const rowIndex = chunk.start + i;
                         if (!sheetMatricesRef.current[sheet.id][rowIndex]) {
                            sheetMatricesRef.current[sheet.id][rowIndex] = [];
                         }
-                        // Avoid complete sheet reload, just update local ref
                         sheetMatricesRef.current[sheet.id][rowIndex] = parsed[i];
                         
-                        const rowHfData = parsed[i].map((c: any) => (c && typeof c === 'object' && 'f' in c) ? c.f : c);
-                        for(let col = 0; col < rowHfData.length; col++) {
-                           hfRef.current?.setCellContents({ sheet: sheetIdHf, col, row: rowIndex }, [[rowHfData[col]]]);
+                        if (sheetIdHf !== undefined) {
+                          const rowHfData = parsed[i].map((c: any) => (c && typeof c === 'object' && 'f' in c) ? c.f : c);
+                          for(let col = 0; col < rowHfData.length; col++) {
+                             hfRef.current?.setCellContents({ sheet: sheetIdHf, col, row: rowIndex }, [[rowHfData[col]]]);
+                          }
+                          changed = true;
                         }
                       }
-                      changed = true;
-                    }
-                 }
-               });
-               if (changed) setHfVersion(v => v + 1);
-             })
-           );
-        }
-        setLoading(false);
+                   }
+                 });
+                 if (changed) setHfVersion(v => v + 1);
+               })
+             );
+          }
+        }, 50);
+
       } catch(err: any) {
         setError(err.message);
         setLoading(false);
@@ -126,6 +146,7 @@ export function useTabEngine(tabId: string) {
     init();
 
     return () => {
+      isMounted = false;
       unsubChunks.forEach(u => u());
     };
   }, [tabId]);
@@ -133,25 +154,21 @@ export function useTabEngine(tabId: string) {
   const updateCell = async (sheetId: string, sheetName: string, row: number, col: number, value: any) => {
     if (!hfRef.current) return;
     
-    // 1. Update HF
     const hfSheetId = hfRef.current.getSheetId(sheetName);
     if (hfSheetId === undefined) return;
     hfRef.current.setCellContents({ sheet: hfSheetId, col, row }, [[value]]);
-    setHfVersion(v => v + 1); // trigger re-render
+    setHfVersion(v => v + 1);
 
-    // 2. Update local matrix
     if (!sheetMatricesRef.current[sheetId][row]) {
       sheetMatricesRef.current[sheetId][row] = [];
     }
     
-    // Store as formula object or primitive
     let cellObj: CellValue = value;
     if (typeof value === 'string' && value.startsWith('=')) {
        cellObj = { f: value, v: hfRef.current.getCellValue({ sheet: hfSheetId, col, row }) };
     }
     sheetMatricesRef.current[sheetId][row][col] = cellObj;
 
-    // 3. Update chunk in Firestore
     const chunkIndex = Math.floor(row / 100);
     const chunkStart = chunkIndex * 100;
     const chunkData = sheetMatricesRef.current[sheetId].slice(chunkStart, chunkStart + 100);
@@ -160,8 +177,13 @@ export function useTabEngine(tabId: string) {
     }
     
     try {
+      const dataStr = JSON.stringify(chunkData);
+      // Pre-update hash to ignore local echo
+      if (!chunkHashesRef.current[sheetId]) chunkHashesRef.current[sheetId] = {};
+      chunkHashesRef.current[sheetId][chunkIndex.toString()] = dataStr;
+
       const chunkRef = doc(db, `tabs/${tabId}/sheets/${sheetId}/chunks`, chunkIndex.toString());
-      await updateDoc(chunkRef, { data: JSON.stringify(chunkData) });
+      await updateDoc(chunkRef, { data: dataStr });
     } catch(err) {
       console.error("Failed to save chunk", err);
     }
@@ -173,21 +195,17 @@ export function useTabEngine(tabId: string) {
     const hfSheetId = hfRef.current.getSheetId(sheetName);
     if (hfSheetId === undefined) return;
 
-    // determine current length
     const currentRows = sheetMatricesRef.current[sheetId] || [];
     const newRowIndex = currentRows.length;
     
-    // update HF
     hfRef.current.setCellContents({ sheet: hfSheetId, col: 0, row: newRowIndex }, [['']]);
     setHfVersion(v => v + 1);
 
-    // update local
     if (!sheetMatricesRef.current[sheetId]) {
       sheetMatricesRef.current[sheetId] = [];
     }
     sheetMatricesRef.current[sheetId][newRowIndex] = [];
 
-    // save chunk
     const chunkIndex = Math.floor(newRowIndex / 100);
     const chunkStart = chunkIndex * 100;
     const chunkData = sheetMatricesRef.current[sheetId].slice(chunkStart, chunkStart + 100);
@@ -196,10 +214,13 @@ export function useTabEngine(tabId: string) {
     }
     
     try {
+      const dataStr = JSON.stringify(chunkData);
+      if (!chunkHashesRef.current[sheetId]) chunkHashesRef.current[sheetId] = {};
+      chunkHashesRef.current[sheetId][chunkIndex.toString()] = dataStr;
+
       const chunkRef = doc(db, `tabs/${tabId}/sheets/${sheetId}/chunks`, chunkIndex.toString());
-      await updateDoc(chunkRef, { data: JSON.stringify(chunkData) });
+      await updateDoc(chunkRef, { data: dataStr });
       
-      // Update chunkCount on sheet if necessary
       const currentSheet = sheets.find(s => s.id === sheetId);
       if (currentSheet && chunkIndex >= currentSheet.chunkCount) {
          await updateDoc(doc(db, `tabs/${tabId}/sheets`, sheetId), { chunkCount: chunkIndex + 1 });
@@ -209,5 +230,5 @@ export function useTabEngine(tabId: string) {
     }
   };
 
-  return { sheets, loading, error, hf: hfRef.current, hfVersion, sheetMatrices: sheetMatricesRef.current, updateCell, addRow };
+  return { sheets, loading, isCalculating, error, hf: hfRef.current, hfVersion, sheetMatrices: sheetMatricesRef.current, updateCell, addRow };
 }

@@ -2,20 +2,29 @@ import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { useTabs } from '../lib/store';
 import ImportScreen from './ImportScreen';
-import { LogOut } from 'lucide-react';
+import { LogOut, Home } from 'lucide-react';
 import TabView from './TabView';
+import HomeTab from './HomeTab';
 import { useNetworkState } from 'react-use';
 
 export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
   const { tabs, loading } = useTabs();
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeTabId, setActiveTabId] = useState<string | null>('home');
+  const [targetSheetId, setTargetSheetId] = useState<string | null>(null);
+  const [targetRowIdx, setTargetRowIdx] = useState<number | null>(null);
   const network = useNetworkState();
 
   useEffect(() => {
     if (tabs.length > 0 && !activeTabId) {
-      setActiveTabId(tabs[0].id);
+      setActiveTabId('home');
     }
   }, [tabs, activeTabId]);
+
+  const handleGoToLocation = (tabId: string, sheetId: string, rowIdx?: number) => {
+    setActiveTabId(tabId);
+    setTargetSheetId(sheetId);
+    setTargetRowIdx(rowIdx ?? null);
+  };
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa] text-[#1e293b]">Загрузка структуры...</div>;
@@ -39,6 +48,7 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
   }
 
   const userInitials = (user.email || 'U').substring(0, 2).toUpperCase();
+  const allTabs = [{ id: 'home', name: 'Главная' }, ...tabs];
 
   return (
     <div className="flex flex-col h-screen w-full bg-[#f8f9fa] text-[#1e293b] font-sans overflow-hidden">
@@ -50,16 +60,21 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
             <span className="font-semibold tracking-tight">DASHBOARD <span className="text-blue-400 font-mono text-xs opacity-75">v2.4</span></span>
           </div>
           <nav className="flex space-x-1 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-            {tabs.map(tab => (
+            {allTabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
+                onClick={() => {
+                  setActiveTabId(tab.id);
+                  setTargetSheetId(null);
+                  setTargetRowIdx(null);
+                }}
+                className={`flex items-center px-3 py-1.5 text-xs font-medium rounded transition-colors whitespace-nowrap ${
                   activeTabId === tab.id 
                     ? 'bg-blue-600 ring-1 ring-blue-400 text-white' 
                     : 'text-slate-400 hover:text-white hover:bg-white/10'
                 }`}
               >
+                {tab.id === 'home' && <Home className="w-3.5 h-3.5 mr-1" />}
                 {tab.name}
               </button>
             ))}
@@ -80,9 +95,16 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
       </header>
 
       {/* Main Content */}
-      {activeTabId && (
-        <TabView tabId={activeTabId} />
-      )}
+      {activeTabId === 'home' ? (
+        <HomeTab setActiveTabAndSheet={handleGoToLocation} />
+      ) : activeTabId ? (
+        <TabView 
+          key={activeTabId} 
+          tabId={activeTabId} 
+          targetSheetId={targetSheetId || undefined} 
+          targetRowIdx={targetRowIdx || undefined} 
+        />
+      ) : null}
 
       {/* Footer Bar */}
       <footer className="h-8 bg-[#0f172a] text-slate-400 px-4 flex items-center justify-between text-[10px] font-mono tracking-widest shrink-0">

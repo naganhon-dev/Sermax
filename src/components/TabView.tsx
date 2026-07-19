@@ -7,18 +7,29 @@ import { db } from '../firebase';
 import { useNetworkState } from 'react-use';
 import { exportAllData } from '../lib/exportUtils';
 
-export default function TabView({ tabId }: { tabId: string }) {
-  const { sheets, loading, error, hf, hfVersion, sheetMatrices, updateCell, addRow } = useTabEngine(tabId);
-  const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
+export default function TabView({ tabId, targetSheetId, targetRowIdx }: { tabId: string, targetSheetId?: string, targetRowIdx?: number }) {
+  const { sheets, loading, isCalculating, error, hf, hfVersion, sheetMatrices, updateCell, addRow } = useTabEngine(tabId);
+  const [activeSheetId, setActiveSheetId] = useState<string | null>(targetSheetId || null);
   const [showHidden, setShowHidden] = useState(false);
   const network = useNetworkState();
 
   useEffect(() => {
     if (sheets.length > 0 && (!activeSheetId || !sheets.find(s => s.id === activeSheetId))) {
-      const firstVisible = sheets.find(s => !s.hidden) || sheets[0];
-      if (firstVisible) setActiveSheetId(firstVisible.id);
+      if (targetSheetId && sheets.find(s => s.id === targetSheetId)) {
+        setActiveSheetId(targetSheetId);
+      } else {
+        const firstVisible = sheets.find(s => !s.hidden) || sheets[0];
+        if (firstVisible) setActiveSheetId(firstVisible.id);
+      }
     }
-  }, [sheets, activeSheetId]);
+  }, [sheets, activeSheetId, targetSheetId]);
+
+  // Handle prop changes for deep linking
+  useEffect(() => {
+    if (targetSheetId && sheets.find(s => s.id === targetSheetId)) {
+      setActiveSheetId(targetSheetId);
+    }
+  }, [targetSheetId, sheets]);
 
   const toggleSheetHidden = async (sheetId: string, currentHidden: boolean) => {
     try {
@@ -85,7 +96,13 @@ export default function TabView({ tabId }: { tabId: string }) {
           </button>
         </div>
 
-        <div className="flex space-x-2 shrink-0 pl-4">
+        <div className="flex space-x-2 shrink-0 pl-4 items-center">
+          {isCalculating && (
+            <div className="text-[10px] text-blue-500 font-medium px-2 py-1 bg-blue-50 rounded flex items-center">
+              <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse mr-1.5"></div>
+              ФОРМУЛЫ СЧИТАЮТСЯ...
+            </div>
+          )}
           <button 
             onClick={() => activeSheet && addRow(activeSheet.id, activeSheet.name)}
             className="flex items-center px-3 py-1 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700 transition-colors"
@@ -113,7 +130,7 @@ export default function TabView({ tabId }: { tabId: string }) {
 
       {/* The Grid Component */}
       <div className="flex-1 overflow-hidden flex flex-col bg-white">
-        {activeSheet && hf && (
+        {activeSheet && (
           <Grid 
              key={activeSheet.id} // force re-mount on sheet change
              sheet={activeSheet} 
@@ -121,6 +138,7 @@ export default function TabView({ tabId }: { tabId: string }) {
              hfVersion={hfVersion} 
              sheetMatrix={sheetMatrices[activeSheet.id] || []}
              onCellEdit={(row, col, value) => updateCell(activeSheet.id, activeSheet.name, row, col, value)}
+             targetRowIdx={targetRowIdx}
           />
         )}
       </div>

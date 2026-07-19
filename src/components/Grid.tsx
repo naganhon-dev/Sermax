@@ -1,69 +1,180 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { SheetData, CellValue } from '../types';
 import { HyperFormula, CellError } from 'hyperformula';
 import { parseMerges, getExcludedCells, indexToA1 } from '../lib/gridUtils';
+import { Cell } from './Cell';
+import { useEvent } from '../lib/useEvent';
 
 interface GridProps {
   sheet: SheetData;
-  hf: HyperFormula;
+  hf: HyperFormula | null;
   hfVersion: number;
   sheetMatrix: CellValue[][];
   onCellEdit: (row: number, col: number, value: string) => void;
+  targetRowIdx?: number;
 }
 
-export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: GridProps) {
-  const sheetId = useMemo(() => hf.getSheetId(sheet.name), [hf, sheet.name]);
+const ROW_HEIGHT = 25;
+const OVERSCAN_ROWS = 10;
+const OVERSCAN_COLS = 5;
+
+export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit, targetRowIdx }: GridProps) {
+  const sheetId = useMemo(() => hf ? hf.getSheetId(sheet.name) : undefined, [hf, sheet.name]);
   
   const [activeCell, setActiveCell] = useState<{ row: number, col: number } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
 
-  // Focus input when editing
+  // Scroll state for virtualization
+  const [scrollTop, setScrollTop] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const [viewportSize, setViewportSize] = useState({ width: 1000, height: 600 });
+
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+    if (targetRowIdx !== undefined && targetRowIdx !== null) {
+      setActiveCell({ row: targetRowIdx, col: 0 });
+      setTimeout(() => {
+        if (gridContainerRef.current) {
+          const targetScrollTop = targetRowIdx * ROW_HEIGHT;
+          gridContainerRef.current.scrollTo({ top: targetScrollTop - viewportSize.height / 2, behavior: 'smooth' });
+        }
+      }, 100);
     }
-  }, [isEditing]);
+  }, [targetRowIdx]);
+
+  useEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setViewportSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    setScrollTop(el.scrollTop);
+    setScrollLeft(el.scrollLeft);
+  }, []);
 
   const mergesMap = useMemo(() => parseMerges(sheet.merges || []), [sheet.merges]);
   const excludedCells = useMemo(() => getExcludedCells(sheet.merges || []), [sheet.merges]);
 
-  // Determine grid dimensions
   const dims = useMemo(() => {
-    if (sheetId === undefined) return { width: 0, height: 0 };
+    if (sheetId === undefined || !hf) return { width: 0, height: 0 };
     return hf.getSheetDimensions(sheetId);
   }, [hf, hfVersion, sheetId]);
 
-  // Ensure at least some default dimensions
   const rowsCount = Math.max(dims.height, sheetMatrix.length, 100);
   const colsCount = Math.max(dims.width, (sheetMatrix[0] && sheetMatrix[0].length) || 0, 26);
 
-  const startEdit = (row: number, col: number) => {
+  // Pre-calculate column widths
+  const colWidths = useMemo(() => {
+    const widths: number[] = [];
+    for (let c = 0; c < colsCount; c++) {
+      const colA1 = indexToA1(0, c).replace(/[0-9]/g, '');
+      const widthRaw = sheet.colWidths?.[colA1] || 15;
+      widths.push(Math.max(50, widthRaw * 7.5));
+    }
+    return widths;
+  }, [sheet.colWidths, colsCount]);
+
+  const colOffsets = useMemo(() => {
+    const offsets = [0];
+    let sum = 0;
+    for (let i = 0; i < colWidths.length; i++) {
+      sum += colWidths[i];
+      offsets.push(sum);
+    }
+    return offsets;
+  }, [colWidths]);
+
+  // Determine visible rows
+  const startRowRaw = Math.floor(scrollTop / ROW_HEIGHT);
+  const startRow = Math.max(0, startRowRaw - OVERSCAN_ROWS);
+  const endRowRaw = Math.ceil((scrollTop + viewportSize.height) / ROW_HEIGHT);
+  const endRow = Math.min(rowsCount, endRowRaw + OVERSCAN_ROWS);
+
+  // Determine visible cols
+  let startColRaw = 0;
+  while (startColRaw < colOffsets.length - 1 && colOffsets[startColRaw + 1] < scrollLeft) {
+    startColRaw++;
+  }
+  const startCol = Math.max(0, startColRaw - OVERSCAN_COLS);
+
+  let endColRaw = startColRaw;
+  while (endColRaw < colOffsets.length - 1 && colOffsets[endColRaw] < scrollLeft + viewportSize.width) {
+    endColRaw++;
+  }
+  const endCol = Math.min(colsCount, endColRaw + OVERSCAN_COLS);
+
+  // Adjust bounds for merges: if any visible cell is part of a merge, ensure the starting cell of that merge is rendered
+  let adjustedStartRow = startRow;
+  let adjustedStartCol = startCol;
+  
+  // A simple pass over visible merges could be enough, but since mergesMap is keyed by "row,col", 
+  // we just expand bounds based on all merges. This is fast enough if merges < 1000.
+  // A robust way: check every excluded cell in the viewport, and if it's excluded, find its parent merge.
+  // Actually, we can just find all merges that intersect the viewport.
+  if (sheet.merges && sheet.merges.length > 0) {
+    Object.entries(mergesMap).forEach(([key, merge]) => {
+      const [mr, mc] = key.split(',').map(Number);
+      // Check intersection
+      const mergeEndRow = mr + merge.rowSpan - 1;
+      const mergeEndCol = mc + merge.colSpan - 1;
+      if (!(mergeEndRow < startRow || mr >= endRow || mergeEndCol < startCol || mc >= endCol)) {
+        if (mr < adjustedStartRow) adjustedStartRow = mr;
+        if (mc < adjustedStartCol) adjustedStartCol = mc;
+      }
+    });
+  }
+
+  const topSpacerHeight = adjustedStartRow * ROW_HEIGHT;
+  const bottomSpacerHeight = (rowsCount - endRow) * ROW_HEIGHT;
+
+  const leftSpacerWidth = colOffsets[adjustedStartCol];
+  const rightSpacerWidth = colOffsets[colsCount] - colOffsets[endCol];
+
+  // Callbacks
+  const startEdit = useEvent((row: number, col: number) => {
     const raw = sheetMatrix[row]?.[col];
     let val = '';
     if (raw !== null && raw !== undefined) {
-      if (typeof raw === 'object' && 'f' in raw) {
-        val = raw.f;
-      } else {
-        val = String(raw);
-      }
+      if (typeof raw === 'object' && 'f' in raw) val = raw.f;
+      else val = String(raw);
     }
     setEditValue(val);
     setIsEditing(true);
-  };
+  });
 
-  const saveEdit = () => {
+  const saveEdit = useEvent(() => {
     if (activeCell && isEditing) {
-      onCellEdit(activeCell.row, activeCell.col, editValue);
+      let finalValue = editValue.trim();
+      const dateMatchRU = finalValue.match(/^(\d{2})\.(\d{2})\.(\d{4})(?: (\d{2}:\d{2}))?$/);
+      if (dateMatchRU) {
+        const [_, d, m, y, time] = dateMatchRU;
+        finalValue = time ? `${y}-${m}-${d} ${time}` : `${y}-${m}-${d}`;
+      }
+      onCellEdit(activeCell.row, activeCell.col, finalValue);
     }
     setIsEditing(false);
-  };
+  });
+
+  const setCell = useEvent((row: number, col: number) => {
+    setActiveCell({ row, col });
+  });
+
+  const handleSetEditValue = useEvent((val: string) => {
+    setEditValue(val);
+  });
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!activeCell) return;
-    
     if (isEditing) {
       if (e.key === 'Enter') {
         saveEdit();
@@ -77,7 +188,6 @@ export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: 
         setIsEditing(false);
       }
     } else {
-      // Navigation
       if (e.key === 'ArrowDown' || e.key === 'Enter') {
         setActiveCell({ row: Math.min(activeCell.row + 1, rowsCount - 1), col: activeCell.col });
         e.preventDefault();
@@ -94,7 +204,6 @@ export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: 
         startEdit(activeCell.row, activeCell.col);
         e.preventDefault();
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // Start typing
         setIsEditing(true);
         setEditValue(e.key);
         e.preventDefault();
@@ -102,7 +211,6 @@ export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: 
     }
   };
 
-  // Render Formula Bar value
   let formulaBarValue = '';
   if (activeCell) {
     if (isEditing) {
@@ -114,6 +222,18 @@ export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: 
       }
     }
   }
+
+  const visibleCols = [];
+  for (let c = adjustedStartCol; c < endCol; c++) {
+    visibleCols.push(c);
+  }
+
+  const visibleRows = [];
+  for (let r = adjustedStartRow; r < endRow; r++) {
+    visibleRows.push(r);
+  }
+
+  if (sheetId === undefined) return null;
 
   return (
     <div className="flex flex-col h-full bg-white outline-none" tabIndex={0} onKeyDown={handleKeyDown}>
@@ -129,112 +249,92 @@ export default function Grid({ sheet, hf, hfVersion, sheetMatrix, onCellEdit }: 
           spellCheck="false"
           value={formulaBarValue}
           onChange={(e) => {
-            if (!isEditing && activeCell) {
-               setIsEditing(true);
-            }
+            if (!isEditing && activeCell) setIsEditing(true);
             setEditValue(e.target.value);
           }}
           onFocus={() => {
             if (activeCell && !isEditing) startEdit(activeCell.row, activeCell.col);
-          }}
-          onBlur={() => {
-            // Keep editing open or save? Usually clicking outside formula bar saves
           }}
         />
       </div>
 
       {/* Grid Container */}
       <div 
-        className="flex-1 overflow-auto bg-white" 
+        className="flex-1 overflow-auto bg-white relative" 
         ref={gridContainerRef}
+        onScroll={handleScroll}
       >
-        <table className="w-full border-collapse border-slate-300 table-fixed text-[12px]">
-          <thead className="sticky top-0 z-20 shadow-sm bg-slate-100">
+        <table className="border-collapse border-slate-300 table-fixed text-[12px] bg-white">
+          <thead className="sticky top-0 z-20 bg-slate-100 shadow-sm">
             <tr>
-              <th className="w-10 border-b border-r border-slate-300 bg-slate-100"></th>
-              {Array.from({ length: colsCount }).map((_, c) => {
+              <th className="w-10 border-b border-r border-slate-300 bg-slate-100 sticky left-0 z-30"></th>
+              {leftSpacerWidth > 0 && <th style={{ width: leftSpacerWidth, minWidth: leftSpacerWidth, padding: 0, border: 0 }}></th>}
+              {visibleCols.map(c => {
                 const colA1 = indexToA1(0, c).replace(/[0-9]/g, '');
-                const widthRaw = sheet.colWidths?.[colA1] || 15;
-                const pxWidth = Math.max(50, widthRaw * 7.5);
+                const pxWidth = colWidths[c];
                 return (
                   <th key={c} className="border-b border-r border-slate-300 p-1 font-semibold text-slate-600 select-none bg-slate-100" style={{ width: pxWidth, minWidth: pxWidth }}>
                     {colA1}
                   </th>
                 );
               })}
+              {rightSpacerWidth > 0 && <th style={{ width: rightSpacerWidth, minWidth: rightSpacerWidth, padding: 0, border: 0 }}></th>}
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: rowsCount }).map((_, r) => {
+            {topSpacerHeight > 0 && (
+              <tr style={{ height: topSpacerHeight }}>
+                <td className="sticky left-0 bg-slate-100 border-r border-slate-200" style={{ height: topSpacerHeight, padding: 0, borderBottom: 0 }}></td>
+                <td colSpan={visibleCols.length + 2} style={{ padding: 0, border: 0 }}></td>
+              </tr>
+            )}
+
+            {visibleRows.map(r => {
               const isRowActive = activeCell?.row === r;
               return (
-                <tr key={r} className="hover:bg-blue-50 group">
-                  <td className="border-b border-r border-slate-200 bg-slate-100 text-center text-[10px] text-slate-400 select-none sticky left-0 z-10 group-hover:bg-slate-200">
+                <tr key={r} id={`grid-row-${r}`} className={`group ${isRowActive ? 'bg-blue-50/50' : 'hover:bg-blue-50'}`} style={{ height: ROW_HEIGHT }}>
+                  <td className="border-b border-r border-slate-200 bg-slate-100 text-center text-[10px] text-slate-400 select-none sticky left-0 z-10 group-hover:bg-slate-200" style={{ width: 40, minWidth: 40, maxWidth: 40 }}>
                     {r + 1}
                   </td>
-                  {Array.from({ length: colsCount }).map((_, c) => {
+                  {leftSpacerWidth > 0 && <td style={{ padding: 0, border: 0 }}></td>}
+                  {visibleCols.map(c => {
                     const cellKey = `${r},${c}`;
                     if (excludedCells.has(cellKey)) return null;
-
                     const merge = mergesMap[cellKey];
-                    const isActive = isRowActive && activeCell?.col === c;
+                    const isActive = activeCell?.row === r && activeCell?.col === c;
                     
-                    let displayValue = '';
-                    if (sheetId !== undefined) {
-                      const hfVal = hf.getCellValue({ sheet: sheetId, col: c, row: r });
-                      if (hfVal instanceof CellError) {
-                        displayValue = hfVal.message; // e.g., #REF!
-                      } else if (hfVal !== null && hfVal !== undefined) {
-                        if (typeof hfVal === 'number') {
-                          displayValue = Number.isInteger(hfVal) ? hfVal.toString() : parseFloat(hfVal.toFixed(4)).toString();
-                        } else {
-                          displayValue = String(hfVal);
-                        }
-                      }
-                    }
-
-                    const rawVal = sheetMatrix[r]?.[c];
-                    const isNumber = !isNaN(Number(displayValue)) && displayValue !== '';
-                    const isFormula = rawVal && typeof rawVal === 'object' && 'f' in rawVal;
-
                     return (
-                      <td 
+                      <Cell
                         key={c}
-                        rowSpan={merge?.rowSpan || 1}
-                        colSpan={merge?.colSpan || 1}
-                        className={`border-b border-r border-slate-200 p-1 truncate relative ${isActive ? 'ring-2 ring-blue-500 ring-inset ring-opacity-100 z-10 bg-blue-50' : ''} ${isNumber ? 'font-mono' : ''} ${isFormula && !isActive ? 'bg-blue-50/30' : ''}`}
-                        onClick={() => {
-                          if (isActive && !isEditing) {
-                            startEdit(r, c);
-                          } else {
-                            if (isEditing) saveEdit();
-                            setActiveCell({ row: r, col: c });
-                          }
-                        }}
-                        onDoubleClick={() => {
-                          if (!isEditing) startEdit(r, c);
-                        }}
-                      >
-                        {isActive && isEditing ? (
-                          <input 
-                            ref={inputRef}
-                            type="text"
-                            className="absolute inset-0 w-full h-full px-1 outline-none font-sans text-sm m-0 bg-white"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={() => saveEdit()}
-                          />
-                        ) : (
-                          <span className={`${displayValue.startsWith('#') ? 'text-red-500 font-bold' : 'text-slate-700'}`}>
-                            {displayValue}
-                          </span>
-                        )}
-                      </td>
+                        r={r}
+                        c={c}
+                        sheetId={sheetId}
+                        hf={hf}
+                        hfVersion={hfVersion}
+                        rawVal={sheetMatrix[r]?.[c]}
+                        rowSpan={merge?.rowSpan}
+                        colSpan={merge?.colSpan}
+                        isActive={isActive}
+                        isEditing={isActive && isEditing}
+                        editValue={isActive ? editValue : ''}
+                        setEditValue={handleSetEditValue}
+                        saveEdit={saveEdit}
+                        startEdit={startEdit}
+                        setActiveCell={setCell}
+                      />
                     );
                   })}
+                  {rightSpacerWidth > 0 && <td style={{ padding: 0, border: 0 }}></td>}
                 </tr>
               );
             })}
+
+            {bottomSpacerHeight > 0 && (
+              <tr style={{ height: bottomSpacerHeight }}>
+                <td className="sticky left-0 bg-slate-100 border-r border-slate-200" style={{ height: bottomSpacerHeight, padding: 0, borderBottom: 0 }}></td>
+                <td colSpan={visibleCols.length + 2} style={{ padding: 0, border: 0 }}></td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
