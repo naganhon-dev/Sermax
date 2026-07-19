@@ -143,7 +143,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
        </div>
 
        {selectedStudent && (
-         <StudentPanel student={selectedStudent} collectionName={collectionName} onClose={() => setSelectedStudent(null)} />
+         <StudentPanel student={selectedStudent} collectionName={collectionName} allRecords={students} onClose={() => setSelectedStudent(null)} />
        )}
     </div>
   );
@@ -160,7 +160,22 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{status}</span>;
 }
 
-function StudentPanel({ student, collectionName, onClose }: { student: any, collectionName: string, onClose: () => void }) {
+const toDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('.')) return d.split('.').reverse().join('-');
+  return d;
+};
+const fromDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('-')) return d.split('-').reverse().join('.');
+  return d;
+};
+const isDateField = (k: string) => {
+  const lower = k.toLowerCase();
+  return lower.includes('дата') || lower.includes('старт') || lower.includes('выпуск') || lower === 'др';
+};
+
+function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
   const isNew = student._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
 
@@ -177,6 +192,47 @@ function StudentPanel({ student, collectionName, onClose }: { student: any, coll
     }
   };
 
+  const uniqueStatuses = Array.from(new Set([
+    "Учится","Не приступал","Заморозка","Блокировка","Выпустился","Возврат",
+    ...allRecords.map(r => r['Статус']).filter(Boolean)
+  ]));
+  const uniquePackages = Array.from(new Set(allRecords.map(r => r['Пакет обучения']).filter(Boolean)));
+  const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор']).filter(Boolean)));
+  const uniqueGroups = Array.from(new Set(allRecords.map(r => r['Группа']).filter(Boolean)));
+
+  const renderInput = (k: string, isMain = false) => {
+    const val = data[k] || '';
+    const setVal = (v: string) => setData({...data, [k]: v});
+    const className = isMain ? "w-full border border-gray-300 rounded px-2 py-1" : "w-full border border-gray-200 rounded px-2 py-1 text-sm bg-gray-50";
+
+    if (isDateField(k)) {
+      return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
+    }
+
+    if (k === 'Статус' || k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа') {
+      let options: string[] = [];
+      if (k === 'Статус') options = uniqueStatuses;
+      if (k === 'Пакет обучения') options = uniquePackages;
+      if (k === 'Ментор') options = uniqueMentors;
+      if (k === 'Группа') options = uniqueGroups;
+      const listId = `list-${k.replace(/\s+/g, '-')}`;
+      return (
+        <>
+          <input list={listId} className={className} value={val} onChange={e => setVal(e.target.value)} />
+          <datalist id={listId}>
+            {options.map(o => <option key={o} value={o} />)}
+          </datalist>
+        </>
+      );
+    }
+
+    if (k === 'Комментарий') {
+      return <textarea className="w-full border border-gray-300 rounded px-2 py-1 h-20" value={val} onChange={e => setVal(e.target.value)} />;
+    }
+
+    return <input className={className} value={val} onChange={e => setVal(e.target.value)} />;
+  };
+
   // grouping logic can be implemented manually
   const allKeys = Object.keys(data).filter(k => !k.startsWith('_') && k !== 'id');
 
@@ -189,27 +245,27 @@ function StudentPanel({ student, collectionName, onClose }: { student: any, coll
       <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">ФИО</label>
-          <input className="w-full border border-gray-300 rounded px-2 py-1" value={data['ФИО'] || ''} onChange={e => setData({...data, 'ФИО': e.target.value})} />
+          {renderInput('ФИО', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Почта</label>
-          <input className="w-full border border-gray-300 rounded px-2 py-1" value={data['Почта'] || ''} onChange={e => setData({...data, 'Почта': e.target.value})} />
+          {renderInput('Почта', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Телефон</label>
-          <input className="w-full border border-gray-300 rounded px-2 py-1" value={data['Телефон'] || ''} onChange={e => setData({...data, 'Телефон': e.target.value})} />
+          {renderInput('Телефон', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Статус</label>
-          <input className="w-full border border-gray-300 rounded px-2 py-1" value={data['Статус'] || ''} onChange={e => setData({...data, 'Статус': e.target.value})} />
+          {renderInput('Статус', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Пакет обучения</label>
-          <input className="w-full border border-gray-300 rounded px-2 py-1" value={data['Пакет обучения'] || ''} onChange={e => setData({...data, 'Пакет обучения': e.target.value})} />
+          {renderInput('Пакет обучения', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Комментарий</label>
-          <textarea className="w-full border border-gray-300 rounded px-2 py-1 h-20" value={data['Комментарий'] || ''} onChange={e => setData({...data, 'Комментарий': e.target.value})} />
+          {renderInput('Комментарий', true)}
         </div>
         {/* Other dynamic fields */}
         <div className="pt-4 border-t border-gray-100">
@@ -217,7 +273,7 @@ function StudentPanel({ student, collectionName, onClose }: { student: any, coll
           {allKeys.filter(k => !['ФИО','Почта','Телефон','Статус','Пакет обучения','Комментарий'].includes(k)).map(k => (
             <div key={k} className="mb-2">
                <label className="block text-xs font-medium text-gray-400 mb-1">{k}</label>
-               <input className="w-full border border-gray-200 rounded px-2 py-1 text-sm bg-gray-50" value={data[k] || ''} onChange={e => setData({...data, [k]: e.target.value})} />
+               {renderInput(k, false)}
             </div>
           ))}
         </div>

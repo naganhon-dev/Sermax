@@ -94,7 +94,7 @@ function JournalView({ activities }: { activities: any[] }) {
            </table>
          </div>
       </div>
-      {selectedActivity && <ActivityPanel activity={selectedActivity} onClose={() => setSelectedActivity(null)} />}
+      {selectedActivity && <ActivityPanel activity={selectedActivity} allRecords={activities} onClose={() => setSelectedActivity(null)} />}
     </div>
   );
 }
@@ -227,7 +227,22 @@ function ProductsSummary({ activities }: { activities: any[] }) {
   );
 }
 
-function ActivityPanel({ activity, onClose }: { activity: any, onClose: () => void }) {
+const toDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('.')) return d.split('.').reverse().join('-');
+  return d;
+};
+const fromDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('-')) return d.split('-').reverse().join('.');
+  return d;
+};
+const isDateField = (k: string) => {
+  const lower = k.toLowerCase();
+  return lower.includes('дата') || lower.includes('старт') || lower.includes('выпуск') || lower === 'др';
+};
+
+function ActivityPanel({ activity, allRecords, onClose }: { activity: any, allRecords: any[], onClose: () => void }) {
   const isNew = activity._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...activity });
 
@@ -243,6 +258,41 @@ function ActivityPanel({ activity, onClose }: { activity: any, onClose: () => vo
     }
   };
 
+  const uniqueTypes = Array.from(new Set(allRecords.map(r => r['Тип активности']).filter(Boolean)));
+  const uniquePrograms = Array.from(new Set(allRecords.map(r => r['Программа']).filter(Boolean)));
+  const uniquePotoks = Array.from(new Set(allRecords.map(r => r['Поток']).filter(Boolean)));
+  const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор']).filter(Boolean)));
+
+  const renderInput = (k: string) => {
+    const val = data[k] || '';
+    const setVal = (v: string) => setData({...data, [k]: v});
+    const className = "w-full border border-gray-300 rounded px-2 py-1 text-sm";
+
+    if (isDateField(k)) {
+      return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
+    }
+
+    if (['Тип активности', 'Программа', 'Поток', 'Ментор'].includes(k)) {
+      let options: string[] = [];
+      if (k === 'Тип активности') options = uniqueTypes;
+      if (k === 'Программа') options = uniquePrograms;
+      if (k === 'Поток') options = uniquePotoks;
+      if (k === 'Ментор') options = uniqueMentors;
+
+      const listId = `list-${k.replace(/\s+/g, '-')}`;
+      return (
+        <>
+          <input list={listId} className={className} value={val} onChange={e => setVal(e.target.value)} />
+          <datalist id={listId}>
+            {options.map(o => <option key={o} value={o} />)}
+          </datalist>
+        </>
+      );
+    }
+
+    return <input className={className} value={val} onChange={e => setVal(e.target.value)} />;
+  };
+
   const fields = ['Период', 'Дата проведения', 'Тип активности', 'Ментор', 'Программа', 'Поток', 'Кол-во', 'Продолжительность факт', 'Продолжительность план', 'Кол-во участников', 'source'];
 
   return (
@@ -255,7 +305,7 @@ function ActivityPanel({ activity, onClose }: { activity: any, onClose: () => vo
         {fields.map(k => (
           <div key={k}>
             <label className="block text-xs font-medium text-gray-500 mb-1">{k}</label>
-            <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm" value={data[k] || ''} onChange={e => setData({...data, [k]: e.target.value})} />
+            {renderInput(k)}
           </div>
         ))}
       </div>

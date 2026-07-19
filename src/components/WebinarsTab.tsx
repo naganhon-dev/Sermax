@@ -50,7 +50,7 @@ export default function WebinarsTab() {
          <div className="flex-1 overflow-auto p-4">
            <WebinarsList view={view} events={events} onSelect={setSelectedEvent} />
          </div>
-         {selectedEvent && <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />}
+         {selectedEvent && <EventPanel event={selectedEvent} allRecords={events} onClose={() => setSelectedEvent(null)} />}
          {showThemes && <ThemesPanel themes={themes} onClose={() => setShowThemes(false)} />}
       </div>
     </div>
@@ -138,7 +138,22 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
   );
 }
 
-function EventPanel({ event, onClose }: { event: any, onClose: () => void }) {
+const toDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('.')) return d.split('.').reverse().join('-');
+  return d;
+};
+const fromDateInput = (d: string) => {
+  if (!d) return '';
+  if (d.includes('-')) return d.split('-').reverse().join('.');
+  return d;
+};
+const isDateField = (k: string) => {
+  const lower = k.toLowerCase();
+  return lower.includes('дата') || lower.includes('старт') || lower.includes('выпуск') || lower === 'др';
+};
+
+function EventPanel({ event, allRecords, onClose }: { event: any, allRecords: any[], onClose: () => void }) {
   const isNew = event._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...event });
 
@@ -155,6 +170,36 @@ function EventPanel({ event, onClose }: { event: any, onClose: () => void }) {
     }
   };
 
+  const uniqueHosts = Array.from(new Set(allRecords.map(r => r['Ведущий']).filter(Boolean)));
+
+  const renderInput = (k: string) => {
+    const val = data[k] || '';
+    const setVal = (v: string) => setData({...data, [k]: v});
+    const className = "w-full border border-gray-300 rounded px-2 py-1 text-sm";
+
+    if (isDateField(k)) {
+      return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
+    }
+
+    if (k === 'Ведущий') {
+      const listId = `list-host`;
+      return (
+        <>
+          <input list={listId} className={className} value={val} onChange={e => setVal(e.target.value)} />
+          <datalist id={listId}>
+            {uniqueHosts.map(o => <option key={o} value={o} />)}
+          </datalist>
+        </>
+      );
+    }
+
+    if (k === 'Тема') {
+      return <textarea className="w-full border border-gray-300 rounded px-2 py-1 h-16 text-sm" value={val} onChange={e => setVal(e.target.value)} />;
+    }
+
+    return <input className={className} value={val} onChange={e => setVal(e.target.value)} />;
+  };
+
   const fields = ['Дата', 'Время', 'Тема', 'Группы клиентов', 'Ссылка для студентов', 'Ссылка на трансляцию', 'Пароль', 'Ведущий', 'Дата отправки письма'];
 
   return (
@@ -167,10 +212,7 @@ function EventPanel({ event, onClose }: { event: any, onClose: () => void }) {
         {fields.map(k => (
           <div key={k}>
             <label className="block text-xs font-medium text-gray-500 mb-1">{k}</label>
-            {k === 'Тема' ? 
-              <textarea className="w-full border border-gray-300 rounded px-2 py-1 h-16 text-sm" value={data[k] || ''} onChange={e => setData({...data, [k]: e.target.value})} /> :
-              <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm" value={data[k] || ''} onChange={e => setData({...data, [k]: e.target.value})} />
-            }
+            {renderInput(k)}
           </div>
         ))}
       </div>
