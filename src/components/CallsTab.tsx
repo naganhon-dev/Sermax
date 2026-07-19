@@ -2,6 +2,20 @@ import { useState, useMemo } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, ChevronRight, Settings } from 'lucide-react';
 
+function toText(v: any): string {
+  if (v == null) return '';
+  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+    return String(v);
+  }
+  if (Array.isArray(v)) {
+    return v.map(toText).join(', ');
+  }
+  if (typeof v === 'object') {
+    return v.label ?? v.name ?? v.title ?? JSON.stringify(v);
+  }
+  return String(v);
+}
+
 export default function CallsTab() {
   const { data: calls } = useCollection('calls');
   const { data: categories } = useCollection('call_categories');
@@ -35,7 +49,7 @@ export default function CallsTab() {
                    onClick={() => setSelectedCatId(c.id)}
                    className={`w-full text-left px-4 py-1.5 text-sm flex items-center justify-between hover:bg-gray-200 ${activeCat?.id === c.id ? 'bg-blue-100 text-blue-800 font-medium' : 'text-gray-700'}`}
                  >
-                   <span>{c['название']}</span>
+                   <span>{toText(c['название'])}</span>
                    {activeCat?.id === c.id && <ChevronRight className="w-4 h-4"/>}
                  </button>
                ))}
@@ -66,26 +80,26 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
   const filtered = useMemo(() => {
     if (!search) return catCalls;
     const q = search.toLowerCase();
-    return catCalls.filter(c => lf.some((f:string) => String(c[f] ?? '').toLowerCase().includes(q)));
+    return catCalls.filter(c => lf.some((f:string) => toText(c[f]).toLowerCase().includes(q)));
   }, [catCalls, search, lf]);
 
   if (!isMonthly) {
     return (
       <div className="p-4 overflow-auto h-full">
-         <h2 className="text-xl font-bold mb-4">{category['название']}</h2>
+         <h2 className="text-xl font-bold mb-4">{toText(category['название'])}</h2>
          <div className="mb-4 w-64"><input placeholder="Поиск..." value={search} onChange={e=>setSearch(e.target.value)} className="border rounded px-2 py-1 w-full text-sm"/></div>
          <table className="w-full text-left border-collapse text-sm">
            <thead>
              <tr className="border-b-2 border-gray-200">
-               {lf.map((f:string) => <th key={f} className="py-2 px-2">{f}</th>)}
+               {lf.map((f:string) => <th key={f} className="py-2 px-2">{toText(f)}</th>)}
                {category.metrics?.map((m:string) => <th key={m} className="py-2 px-2">{m}</th>)}
              </tr>
            </thead>
            <tbody>
              {filtered.map(c => (
                <tr key={c.id} className="border-b border-gray-100 hover:bg-gray-50">
-                 {lf.map((f:string) => <td key={f} className="py-1.5 px-2">{c[f]}</td>)}
-                 {category.metrics?.map((m:string) => <td key={m} className="py-1.5 px-2 text-gray-500">{c[m]}</td>)}
+                 {lf.map((f:string) => <td key={f} className="py-1.5 px-2">{toText(c[f])}</td>)}
+                 {category.metrics?.map((m:string) => <td key={m} className="py-1.5 px-2 text-gray-500">{toText(c[m])}</td>)}
                </tr>
              ))}
            </tbody>
@@ -99,7 +113,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
     <div className="flex flex-col h-full relative">
        <div className="p-4 border-b border-gray-200 bg-white">
          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-xl font-bold">{category['название']}</h2>
+            <h2 className="text-xl font-bold">{toText(category['название'])}</h2>
             <button 
               onClick={async () => {
                 const newRow = { categoryId: category.id };
@@ -115,7 +129,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
              {Object.entries(category.legend).map(([color, label]) => (
                <div key={color} className="flex items-center gap-1">
                  <div className="w-3 h-3 rounded-full" style={{backgroundColor: color}} />
-                 <span className="text-gray-600">{label as string}</span>
+                 <span className="text-gray-600">{toText(label)}</span>
                </div>
              ))}
            </div>
@@ -127,7 +141,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
          <table className="w-full text-left border-collapse text-sm">
            <thead className="bg-gray-50 sticky top-0 shadow-sm z-0">
              <tr>
-               {lf.map((f:string) => <th key={f} className="py-2 px-2 border-r border-gray-200">{f}</th>)}
+               {lf.map((f:string) => <th key={f} className="py-2 px-2 border-r border-gray-200">{toText(f)}</th>)}
                {MONTHS.map(m => <th key={m} className="py-2 px-2 text-center border-r border-gray-200 min-w-[80px]">{m}</th>)}
                <th className="py-2 px-2 text-center bg-gray-100">Итог за год</th>
              </tr>
@@ -141,7 +155,7 @@ function CategoryMatrix({ category, allCalls }: { category: any, allCalls: any[]
                    {lf.map((f:string, i:number) => (
                      <td key={f} className={`py-1.5 px-2 border-r border-gray-200 relative ${i===0?'font-medium':''}`}>
                        {i===0 && row._color && <div className="absolute left-0 top-0 bottom-0 w-1" style={{backgroundColor: row._color}} />}
-                       {row[f]}
+                       {toText(row[f])}
                      </td>
                    ))}
                    {MONTHS.map(m => {
@@ -205,7 +219,7 @@ function CellPopover({ row, month, category, onClose }: { row: any, month: strin
     <div className="absolute right-0 top-0 bottom-0 w-80 bg-white shadow-2xl border-l border-gray-200 flex flex-col z-10">
        <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
          <div>
-           <div className="font-bold">{row['ФИО']}</div>
+           <div className="font-bold">{toText(row['ФИО'])}</div>
            <div className="text-xs text-blue-600">{month}</div>
          </div>
          <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded"><X className="w-5 h-5"/></button>
@@ -214,7 +228,7 @@ function CellPopover({ row, month, category, onClose }: { row: any, month: strin
          {metrics.map((m:string) => (
            <div key={m}>
               <label className="block text-xs font-medium text-gray-500 mb-1">{m}</label>
-              <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm" value={data[m] || ''} onChange={e => setData({...data, [m]: e.target.value})} />
+              <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm" value={toText(data[m])} onChange={e => setData({...data, [m]: e.target.value})} />
            </div>
          ))}
        </div>
