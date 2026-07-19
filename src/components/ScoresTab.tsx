@@ -10,7 +10,7 @@ export default function ScoresTab() {
       <div className="flex border-b border-gray-200 bg-gray-50 px-4 pt-2">
         {[
           { id: 'call_scores', label: 'Оценки созвонов' },
-          { id: 'os_reviews', label: 'ОС менторов' },
+          // { id: 'os_reviews', label: 'ОС менторов (TODO)' },
         ].map(t => (
           <button
             key={t.id}
@@ -23,7 +23,7 @@ export default function ScoresTab() {
       </div>
       <div className="flex-1 overflow-hidden relative">
         {subTab === 'call_scores' && <CallScoresView />}
-        {subTab === 'os_reviews' && <OsReviewsView />}
+        {/* subTab === 'os_reviews' && <OsReviewsView /> */}
       </div>
     </div>
   );

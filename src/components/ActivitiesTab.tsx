@@ -163,8 +163,68 @@ function MentorsSummary({ activities }: { activities: any[] }) {
 }
 
 function ProductsSummary({ activities }: { activities: any[] }) {
-  // similar grouping by Program+Potok
-  return <div className="p-4">Сводка по продуктам (В разработке)</div>;
+  const [period, setPeriod] = useState('');
+  const periods = Array.from(new Set(activities.map(a => a['Период']).filter(Boolean))).sort().reverse();
+  
+  const { types, matrix } = useMemo(() => {
+    const data = period ? activities.filter(a => a['Период'] === period) : activities;
+    const typeSet = new Set<string>();
+    const mat: Record<string, Record<string, number>> = {};
+    
+    data.forEach(a => {
+      const prog = a['Программа'] || '';
+      const potok = a['Поток'] || '';
+      const prod = prog || potok ? `${prog} ${potok}`.trim() : 'Не указан';
+      const t = a['Тип активности'];
+      const count = Number(a['Кол-во'] || a['Кол-во активностей']) || 1;
+      if (!t) return;
+      typeSet.add(t);
+      if (!mat[prod]) mat[prod] = {};
+      mat[prod][t] = (mat[prod][t] || 0) + count;
+    });
+
+    return { types: Array.from(typeSet).sort(), matrix: mat };
+  }, [activities, period]);
+
+  const products = Object.keys(matrix).sort();
+
+  return (
+    <div className="flex flex-col h-full p-4">
+      <div className="mb-4">
+        <select value={period} onChange={e => setPeriod(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
+           <option value="">Все периоды</option>
+           {periods.map((p: any) => <option key={p} value={p}>{p}</option>)}
+        </select>
+      </div>
+      <div className="flex-1 overflow-auto border border-gray-200 rounded">
+        <table className="w-full text-left border-collapse text-sm">
+          <thead className="bg-gray-50 sticky top-0 shadow-sm">
+            <tr>
+              <th className="py-2 px-3 border-r border-gray-200 w-48">Программа / Поток</th>
+              {types.map(t => <th key={t} className="py-2 px-3 text-center border-r border-gray-200 whitespace-nowrap">{t}</th>)}
+              <th className="py-2 px-3 text-center bg-gray-100 font-bold">Итог</th>
+            </tr>
+          </thead>
+          <tbody>
+             {products.map(prod => {
+               const rowTotal = types.reduce((sum, t) => sum + (matrix[prod][t] || 0), 0);
+               return (
+                 <tr key={prod} className="border-b border-gray-200 hover:bg-gray-50">
+                   <td className="py-2 px-3 border-r border-gray-200 font-medium">{prod}</td>
+                   {types.map(t => (
+                     <td key={t} className={`py-2 px-3 text-center border-r border-gray-200 ${matrix[prod][t] ? '' : 'text-gray-300'}`}>
+                       {matrix[prod][t] || '—'}
+                     </td>
+                   ))}
+                   <td className="py-2 px-3 text-center bg-gray-50 font-bold">{rowTotal}</td>
+                 </tr>
+               );
+             })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function ActivityPanel({ activity, onClose }: { activity: any, onClose: () => void }) {

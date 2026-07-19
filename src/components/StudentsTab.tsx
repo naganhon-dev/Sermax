@@ -24,16 +24,16 @@ export default function StudentsTab({ targetStudent }: { targetStudent?: any }) 
         ))}
       </div>
       <div className="flex-1 overflow-hidden relative">
-        {subTab === 'registry' && <RegistryView targetStudent={targetStudent} />}
-        {subTab === 'graduates' && <GraduatesView />}
-        {subTab === 'blacklist' && <BlacklistView />}
+        {subTab === 'registry' && <RegistryView targetStudent={targetStudent} collectionName="students" />}
+        {subTab === 'graduates' && <RegistryView collectionName="graduates" />}
+        {subTab === 'blacklist' && <RegistryView collectionName="blacklist" />}
       </div>
     </div>
   );
 }
 
-function RegistryView({ targetStudent }: { targetStudent?: any }) {
-  const { data: students, loading } = useCollection('students');
+function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, collectionName: string }) {
+  const { data: students, loading } = useCollection(collectionName);
   const [program, setProgram] = useState('Все'); // Все, ГП, Эволюция
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -143,7 +143,7 @@ function RegistryView({ targetStudent }: { targetStudent?: any }) {
        </div>
 
        {selectedStudent && (
-         <StudentPanel student={selectedStudent} onClose={() => setSelectedStudent(null)} />
+         <StudentPanel student={selectedStudent} collectionName={collectionName} onClose={() => setSelectedStudent(null)} />
        )}
     </div>
   );
@@ -160,19 +160,19 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{status}</span>;
 }
 
-function StudentPanel({ student, onClose }: { student: any, onClose: () => void }) {
+function StudentPanel({ student, collectionName, onClose }: { student: any, collectionName: string, onClose: () => void }) {
   const isNew = student._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
 
   const save = () => {
-    if (isNew) createRecord('students', data);
-    else updateRecord('students', data.id, data);
+    if (isNew) createRecord(collectionName, data);
+    else updateRecord(collectionName, data.id, data);
     onClose();
   };
 
   const del = async () => {
-    if (confirm("Удалить студента?")) {
-      await deleteRecord('students', data.id, data);
+    if (confirm("Удалить запись?")) {
+      await deleteRecord(collectionName, data.id, data);
       onClose();
     }
   };
@@ -232,12 +232,4 @@ function StudentPanel({ student, onClose }: { student: any, onClose: () => void 
   );
 }
 
-function GraduatesView() {
-  const { data: grads } = useCollection('graduates');
-  return <div className="p-4">Выпускники: {grads.length} записей (Таблица аналогично)</div>;
-}
-
-function BlacklistView() {
-  const { data: bl } = useCollection('blacklist');
-  return <div className="p-4">Черный список: {bl.length} записей (Таблица аналогично)</div>;
-}
+// Removed empty views

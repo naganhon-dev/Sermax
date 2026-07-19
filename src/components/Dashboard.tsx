@@ -11,7 +11,21 @@ import AmgTab from './AmgTab';
 import ArchiveTab from './ArchiveTab';
 import { exportAllData } from '../lib/export';
 
+const ALLOWED_EMAILS = [
+  'naganhon@gmail.com'
+];
+
 export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
+  if (user.email && !ALLOWED_EMAILS.includes(user.email.toLowerCase())) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-gray-50 flex-col gap-4">
+        <h1 className="text-xl font-semibold text-red-600">Нет доступа</h1>
+        <p className="text-gray-600 text-sm">Обратитесь к администратору.</p>
+        <button onClick={onLogout} className="bg-slate-800 text-white px-4 py-2 rounded-md hover:bg-slate-700">Выйти</button>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState('home');
   const [showSettings, setShowSettings] = useState(false);
 
