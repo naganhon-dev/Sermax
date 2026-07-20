@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useCollection, updateRecord, createRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
+import { useSort } from '../lib/useSort';
+import { usePagination } from '../lib/usePagination';
+import Pagination from './Pagination';
 
 export default function AmgTab() {
   const { data: entries } = useCollection('amg_entries');
@@ -23,13 +26,7 @@ export default function AmgTab() {
   const slotPlan = currentMonthSlots['Планово'] !== undefined ? currentMonthSlots['Планово'] : (currentMonthSlots['plan'] !== undefined ? currentMonthSlots['plan'] : '');
   const slotDebts = currentMonthSlots['С долгами'] !== undefined ? currentMonthSlots['С долгами'] : (currentMonthSlots['debts'] !== undefined ? currentMonthSlots['debts'] : '');
 
-  // Filter entries for the selected month
-  const monthEntries = useMemo(() => {
-    return entries.filter(e => {
-      const m = e['Месяц'] || e.month;
-      return m === month;
-    });
-  }, [entries, month]);
+  const { handleSort, renderSortIcon, sortData } = useSort();
 
   // Safe field getters for students
   const getFio = (e: any) => e['ФИО'] ?? e['fio'] ?? '';
@@ -37,6 +34,23 @@ export default function AmgTab() {
   const getDebts = (e: any) => e['Долги'] ?? e['debts'] ?? '';
   const getMonthsToTransfer = (e: any) => e['До перехода'] ?? e['monthsToTransfer'] ?? '';
   const getSection = (e: any) => e['Секция'] ?? e['section'] ?? '';
+
+  // Filter entries for the selected month and normalize fields
+  const monthEntries = useMemo(() => {
+    return entries
+      .filter(e => {
+        const m = e['Месяц'] || e.month;
+        return m === month;
+      })
+      .map(e => ({
+        ...e,
+        'ФИО': getFio(e),
+        'Почта': getEmail(e),
+        'Долги': getDebts(e),
+        'До перехода': getMonthsToTransfer(e),
+        'Секция': getSection(e),
+      }));
+  }, [entries, month]);
 
   // Helpers to save config to amg_meta
   const saveSchedule = async (val: string) => {
@@ -272,194 +286,219 @@ export default function AmgTab() {
             {totalDebts.toLocaleString('ru-RU')} ₽
           </span>
         </div>
-      </div>
-      
-      {/* Scrollable tables by section */}
+      </div>      {/* Scrollable tables by section */}
       <div className="flex-1 overflow-auto p-6 space-y-8 bg-gray-100/30">
-        {sectionNames.map(sectName => {
-          const sEntries = sectionEntries(sectName);
-          return (
-            <div key={sectName} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-gray-800 text-xs md:text-sm uppercase tracking-wide">{sectName}</h3>
-                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-semibold text-xs rounded-full">
-                    {sEntries.length}
-                  </span>
-                </div>
-                <button 
-                  onClick={() => handleCreateStudent(sectName)} 
-                  className="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Добавить
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs md:text-sm">
-                  <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider font-semibold text-[10px] border-b border-gray-200">
-                    <tr>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600">ФИО</th>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600">Почта</th>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600">Долги</th>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600 text-center">До перехода</th>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600 w-44">Секция</th>
-                      <th className="py-2.5 px-4 font-semibold text-gray-600 w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {sEntries.map(e => (
-                      <tr key={e.id} className="hover:bg-gray-50/80 transition-colors group">
-                        <td className="py-2 px-4">
-                          <input 
-                            className="w-full bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none text-gray-800 font-medium py-0.5 text-xs md:text-sm" 
-                            value={getFio(e)} 
-                            onChange={ev => handleUpdateStudent(e.id, { 'ФИО': ev.target.value })} 
-                          />
-                        </td>
-                        <td className="py-2 px-4">
-                          <input 
-                            className="w-full bg-transparent text-gray-500 border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none py-0.5 text-xs md:text-sm" 
-                            value={getEmail(e)} 
-                            onChange={ev => handleUpdateStudent(e.id, { 'Почта': ev.target.value })} 
-                          />
-                        </td>
-                        <td className="py-2 px-4">
-                          <input 
-                            className="w-full bg-transparent text-red-600 font-medium border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none py-0.5 text-xs md:text-sm" 
-                            value={getDebts(e)} 
-                            onChange={ev => handleUpdateStudent(e.id, { 'Долги': ev.target.value })} 
-                            placeholder="Нет"
-                          />
-                        </td>
-                        <td className="py-2 px-4 text-center">
-                          <input 
-                            className="w-16 text-center bg-transparent border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none font-semibold py-0.5 mx-auto block text-xs md:text-sm" 
-                            value={getMonthsToTransfer(e)} 
-                            onChange={ev => handleUpdateStudent(e.id, { 'До перехода': ev.target.value })} 
-                          />
-                        </td>
-                        <td className="py-2 px-4">
-                          <select
-                            value={getSection(e)}
-                            onChange={ev => handleUpdateStudent(e.id, { 'Секция': ev.target.value })}
-                            className="text-xs bg-gray-50 border border-gray-300 rounded px-1.5 py-1 focus:ring-1 focus:ring-blue-500 outline-none text-gray-600 font-medium w-full max-w-[170px]"
-                          >
-                            {sectionNames.map(sn => (
-                              <option key={sn} value={sn}>{sn}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="py-2 px-4 text-right">
-                          <button 
-                            onClick={() => confirm("Удалить студента?") && deleteRecord('amg_entries', e.id, e)} 
-                            className="text-gray-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-                            title="Удалить"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {sEntries.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="py-4 text-center text-gray-400 text-xs">
-                          Нет студентов в этой секции
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
+        {sectionNames.map(sectName => (
+          <AmgSectionTable
+            key={sectName}
+            sectName={sectName}
+            rawEntries={sectionEntries(sectName)}
+            onUpdateStudent={handleUpdateStudent}
+            onCreateStudent={handleCreateStudent}
+            onDeleteStudent={(id, record) => deleteRecord('amg_entries', id, record)}
+            sectionNames={sectionNames}
+            handleSort={handleSort}
+            renderSortIcon={renderSortIcon}
+            sortData={sortData}
+          />
+        ))}
 
         {/* Fallback Section for Unassigned if any exist */}
         {unassignedEntries.length > 0 && (
-          <div className="bg-red-50/30 rounded-xl shadow-sm border border-red-100 overflow-hidden">
-            <div className="px-4 py-3 bg-red-50 border-b border-red-100 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-red-800 text-xs md:text-sm uppercase tracking-wide">Без секции (Неизвестные)</h3>
-                <span className="px-2 py-0.5 bg-red-100 text-red-800 font-semibold text-xs rounded-full">
-                  {unassignedEntries.length}
-                </span>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs md:text-sm">
-                <thead className="bg-red-50/50 text-red-600 uppercase tracking-wider font-semibold text-[10px] border-b border-red-100">
-                  <tr>
-                    <th className="py-2.5 px-4 font-semibold">ФИО</th>
-                    <th className="py-2.5 px-4 font-semibold">Почта</th>
-                    <th className="py-2.5 px-4 font-semibold">Долги</th>
-                    <th className="py-2.5 px-4 font-semibold text-center">До перехода</th>
-                    <th className="py-2.5 px-4 font-semibold w-44">Секция</th>
-                    <th className="py-2.5 px-4 font-semibold w-12"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-red-100 bg-white">
-                  {unassignedEntries.map(e => (
-                    <tr key={e.id} className="hover:bg-red-50/10 transition-colors group">
-                      <td className="py-2 px-4">
-                        <input 
-                          className="w-full bg-transparent border-b border-transparent hover:border-red-300 focus:border-red-500 outline-none text-gray-800 font-medium py-0.5" 
-                          value={getFio(e)} 
-                          onChange={ev => handleUpdateStudent(e.id, { 'ФИО': ev.target.value })} 
-                        />
-                      </td>
-                      <td className="py-2 px-4">
-                        <input 
-                          className="w-full bg-transparent text-gray-500 border-b border-transparent hover:border-red-300 focus:border-red-500 outline-none py-0.5" 
-                          value={getEmail(e)} 
-                          onChange={ev => handleUpdateStudent(e.id, { 'Почта': ev.target.value })} 
-                        />
-                      </td>
-                      <td className="py-2 px-4">
-                        <input 
-                          className="w-full bg-transparent text-red-600 font-medium border-b border-transparent hover:border-red-300 focus:border-red-500 outline-none py-0.5" 
-                          value={getDebts(e)} 
-                          onChange={ev => handleUpdateStudent(e.id, { 'Долги': ev.target.value })} 
-                          placeholder="Нет"
-                        />
-                      </td>
-                      <td className="py-2 px-4 text-center">
-                        <input 
-                          className="w-16 text-center bg-transparent border-b border-transparent hover:border-red-300 focus:border-red-500 outline-none font-semibold py-0.5 mx-auto block" 
-                          value={getMonthsToTransfer(e)} 
-                          onChange={ev => handleUpdateStudent(e.id, { 'До перехода': ev.target.value })} 
-                        />
-                      </td>
-                      <td className="py-2 px-4">
-                        <select
-                          value={getSection(e)}
-                          onChange={ev => handleUpdateStudent(e.id, { 'Секция': ev.target.value })}
-                          className="text-xs bg-red-50/50 border border-red-200 rounded px-1.5 py-1 focus:ring-1 focus:ring-red-500 outline-none text-red-700 font-medium w-full max-w-[170px]"
-                        >
-                          <option value="">-- Выберите секцию --</option>
-                          {sectionNames.map(sn => (
-                            <option key={sn} value={sn}>{sn}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2 px-4 text-right">
-                        <button 
-                          onClick={() => confirm("Удалить студента?") && deleteRecord('amg_entries', e.id, e)} 
-                          className="text-gray-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
-                          title="Удалить"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <AmgSectionTable
+            sectName="Без секции (Неизвестные)"
+            rawEntries={unassignedEntries}
+            onUpdateStudent={handleUpdateStudent}
+            onDeleteStudent={(id, record) => deleteRecord('amg_entries', id, record)}
+            sectionNames={sectionNames}
+            handleSort={handleSort}
+            renderSortIcon={renderSortIcon}
+            sortData={sortData}
+            isUnassigned
+          />
         )}
       </div>
+    </div>
+  );
+}
+
+interface AmgSectionTableProps {
+  key?: string;
+  sectName: string;
+  rawEntries: any[];
+  onUpdateStudent: (id: string, fields: any) => void;
+  onCreateStudent?: (sectName: string) => void;
+  onDeleteStudent: (id: string, record: any) => void;
+  sectionNames: string[];
+  handleSort: (key: string) => void;
+  renderSortIcon: (key: string) => any;
+  sortData: (data: any[]) => any[];
+  isUnassigned?: boolean;
+}
+
+function AmgSectionTable({
+  sectName,
+  rawEntries,
+  onUpdateStudent,
+  onCreateStudent,
+  onDeleteStudent,
+  sectionNames,
+  handleSort,
+  renderSortIcon,
+  sortData,
+  isUnassigned = false,
+}: AmgSectionTableProps) {
+  const sortedEntries = useMemo(() => {
+    return sortData(rawEntries);
+  }, [rawEntries, sortData]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(sortedEntries, [sectName], `pageSize_amg_${sectName.replace(/\s+/g, '_')}`);
+
+  return (
+    <div className={isUnassigned 
+      ? "bg-red-50/30 rounded-xl shadow-sm border border-red-100 overflow-hidden"
+      : "bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+    }>
+      <div className={`px-4 py-3 border-b flex justify-between items-center ${
+        isUnassigned ? "bg-red-50 border-red-100" : "bg-gray-50 border-gray-200"
+      }`}>
+        <div className="flex items-center gap-2">
+          <h3 className={`font-bold text-xs md:text-sm uppercase tracking-wide ${
+            isUnassigned ? "text-red-800" : "text-gray-800"
+          }`}>{sectName}</h3>
+          <span className={`px-2 py-0.5 font-semibold text-xs rounded-full ${
+            isUnassigned ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"
+          }`}>
+            {rawEntries.length}
+          </span>
+        </div>
+        {!isUnassigned && onCreateStudent && (
+          <button 
+            onClick={() => onCreateStudent(sectName)} 
+            className="bg-blue-600 text-white px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 hover:bg-blue-700 transition-colors shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5" /> Добавить
+          </button>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs md:text-sm">
+          <thead className={isUnassigned 
+            ? "bg-red-50/50 text-red-600 uppercase tracking-wider font-semibold text-[10px] border-b border-red-100"
+            : "bg-gray-50 text-gray-500 uppercase tracking-wider font-semibold text-[10px] border-b border-gray-200"
+          }>
+            <tr>
+              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('ФИО')}>ФИО{renderSortIcon('ФИО')}</th>
+              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Почта')}>Почта{renderSortIcon('Почта')}</th>
+              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Долги')}>Долги{renderSortIcon('Долги')}</th>
+              <th className={`py-2.5 px-4 font-semibold text-center cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('До перехода')}>До перехода{renderSortIcon('До перехода')}</th>
+              <th className={`py-2.5 px-4 font-semibold w-44 cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Секция')}>Секция{renderSortIcon('Секция')}</th>
+              <th className="py-2.5 px-4 font-semibold w-12"></th>
+            </tr>
+          </thead>
+          <tbody className={`divide-y ${isUnassigned ? 'divide-red-100 bg-white' : 'divide-gray-100'}`}>
+            {paginatedData.map(e => (
+              <tr key={e.id} className={isUnassigned 
+                ? "hover:bg-red-50/10 transition-colors group"
+                : "hover:bg-gray-50/80 transition-colors group"
+              }>
+                <td className="py-2 px-4">
+                  <input 
+                    className={`w-full bg-transparent border-b border-transparent outline-none font-medium py-0.5 text-xs md:text-sm ${
+                      isUnassigned ? 'hover:border-red-300 focus:border-red-500 text-gray-800' : 'hover:border-gray-300 focus:border-blue-500 text-gray-800'
+                    }`} 
+                    value={e['ФИО'] ?? e['fio'] ?? ''} 
+                    onChange={ev => onUpdateStudent(e.id, { 'ФИО': ev.target.value })} 
+                  />
+                </td>
+                <td className="py-2 px-4">
+                  <input 
+                    className={`w-full bg-transparent text-gray-500 border-b border-transparent outline-none py-0.5 text-xs md:text-sm ${
+                      isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
+                    }`} 
+                    value={e['Почта'] ?? e['email'] ?? ''} 
+                    onChange={ev => onUpdateStudent(e.id, { 'Почта': ev.target.value })} 
+                  />
+                </td>
+                <td className="py-2 px-4">
+                  <input 
+                    className={`w-full bg-transparent text-red-600 font-medium border-b border-transparent outline-none py-0.5 text-xs md:text-sm ${
+                      isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
+                    }`} 
+                    value={e['Долги'] ?? e['debts'] ?? ''} 
+                    onChange={ev => onUpdateStudent(e.id, { 'Долги': ev.target.value })} 
+                    placeholder="Нет"
+                  />
+                </td>
+                <td className="py-2 px-4 text-center">
+                  <input 
+                    className={`w-16 text-center bg-transparent border-b border-transparent outline-none font-semibold py-0.5 mx-auto block text-xs md:text-sm ${
+                      isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
+                    }`} 
+                    value={e['До перехода'] ?? e['monthsToTransfer'] ?? ''} 
+                    onChange={ev => onUpdateStudent(e.id, { 'До перехода': ev.target.value })} 
+                  />
+                </td>
+                <td className="py-2 px-4">
+                  <select
+                    value={e['Секция'] ?? e['section'] ?? ''}
+                    onChange={ev => onUpdateStudent(e.id, { 'Секция': ev.target.value })}
+                    className={`text-xs border rounded px-1.5 py-1 outline-none font-medium w-full max-w-[170px] ${
+                      isUnassigned 
+                        ? 'bg-red-50/50 border-red-200 focus:ring-1 focus:ring-red-500 text-red-700' 
+                        : 'bg-gray-50 border-gray-300 focus:ring-1 focus:ring-blue-500 text-gray-600'
+                    }`}
+                  >
+                    {isUnassigned && <option value="">-- Выберите секцию --</option>}
+                    {sectionNames.map(sn => (
+                      <option key={sn} value={sn}>{sn}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="py-2 px-4 text-right">
+                  <button 
+                    onClick={() => confirm("Удалить студента?") && onDeleteStudent(e.id, e)} 
+                    className="text-gray-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
+                    title="Удалить"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {paginatedData.length === 0 && (
+              <tr>
+                <td colSpan={6} className="py-4 text-center text-gray-400 text-xs">
+                  Нет студентов в этой секции
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <Pagination
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        pageSize={pageSize}
+        setPageSize={setPageSize}
+        totalPages={totalPages}
+        startIndex={startIndex}
+        endIndex={endIndex}
+        totalItems={totalItems}
+        grandTotal={rawEntries.length}
+      />
     </div>
   );
 }

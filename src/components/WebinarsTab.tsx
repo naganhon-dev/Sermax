@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
+import { useSort } from '../lib/useSort';
+import { usePagination } from '../lib/usePagination';
+import Pagination from './Pagination';
 
 export default function WebinarsTab() {
   const [view, setView] = useState('upcoming'); // upcoming, all, calendar
@@ -59,6 +62,8 @@ export default function WebinarsTab() {
 
 function WebinarsList({ view, events, onSelect }: { view: string, events: any[], onSelect: (e: any) => void }) {
   const [search, setSearch] = useState('');
+
+  const { handleSort, renderSortIcon, sortData } = useSort();
   
   const filtered = useMemo(() => {
     let list = [...events];
@@ -82,6 +87,25 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
     return list;
   }, [events, view, search]);
 
+  const sortedData = useMemo(() => {
+    if (view === 'all') {
+      return sortData(filtered);
+    }
+    return filtered;
+  }, [filtered, view, sortData]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(sortedData, [view, search], 'pageSize_webinars');
+
   const [showPwd, setShowPwd] = useState<Record<string, boolean>>({});
 
   return (
@@ -96,17 +120,17 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
       <table className="w-full text-left border-collapse text-sm">
          <thead>
            <tr className="border-b-2 border-gray-200">
-             <th className="py-2 px-2 w-24">Дата</th>
-             <th className="py-2 px-2 w-16">Время</th>
-             <th className="py-2 px-2">Тема</th>
-             <th className="py-2 px-2">Группы клиентов</th>
+             <th className="py-2 px-2 w-24 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата')}>Дата{renderSortIcon('Дата')}</th>
+             <th className="py-2 px-2 w-16 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Время')}>Время{renderSortIcon('Время')}</th>
+             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Тема')}>Тема{renderSortIcon('Тема')}</th>
+             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Группы клиентов')}>Группы клиентов{renderSortIcon('Группы клиентов')}</th>
              <th className="py-2 px-2">Ссылки</th>
-             <th className="py-2 px-2 w-32">Пароль</th>
-             <th className="py-2 px-2">Ведущий</th>
+             <th className="py-2 px-2 w-32 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Пароль')}>Пароль{renderSortIcon('Пароль')}</th>
+             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Ведущий')}>Ведущий{renderSortIcon('Ведущий')}</th>
            </tr>
          </thead>
          <tbody>
-           {filtered.map(e => (
+           {paginatedData.map(e => (
              <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => onSelect(e)}>
                <td className="py-2 px-2 font-medium">{e['Дата']}</td>
                <td className="py-2 px-2 text-gray-500">{e['Время']}</td>
@@ -131,9 +155,21 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
                <td className="py-2 px-2">{e['Ведущий']}</td>
              </tr>
            ))}
-           {filtered.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-500">Нет вебинаров</td></tr>}
+           {paginatedData.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-500">Нет вебинаров</td></tr>}
          </tbody>
       </table>
+
+      <Pagination
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        pageSize={pageSize}
+        setPageSize={setPageSize}
+        totalPages={totalPages}
+        startIndex={startIndex}
+        endIndex={endIndex}
+        totalItems={totalItems}
+        grandTotal={events.length}
+      />
     </div>
   );
 }

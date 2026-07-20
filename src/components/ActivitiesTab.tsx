@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, Filter } from 'lucide-react';
+import { useSort } from '../lib/useSort';
+import { usePagination } from '../lib/usePagination';
+import Pagination from './Pagination';
 
 export default function ActivitiesTab() {
   const [subTab, setSubTab] = useState('journal'); // journal, mentors, products
@@ -37,6 +40,8 @@ function JournalView({ activities }: { activities: any[] }) {
   const [mentor, setMentor] = useState('');
   const [selectedActivity, setSelectedActivity] = useState<any>(null);
 
+  const { handleSort, renderSortIcon, sortData } = useSort();
+
   const filtered = useMemo(() => {
     return activities.filter(a => {
       if (period && a['Период'] !== period) return false;
@@ -44,6 +49,27 @@ function JournalView({ activities }: { activities: any[] }) {
       return true;
     });
   }, [activities, period, mentor]);
+
+  const normalizedFiltered = useMemo(() => {
+    return filtered.map(a => ({
+      ...a,
+      'Кол-во': a['Кол-во'] || a['Кол-во активностей'] || ''
+    }));
+  }, [filtered]);
+
+  const sortedData = useMemo(() => sortData(normalizedFiltered), [normalizedFiltered, sortData]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(sortedData, [period, mentor], 'pageSize_activities');
 
   const periods = Array.from(new Set(activities.map(a => a['Период']).filter(Boolean))).sort().reverse();
   const mentors = Array.from(new Set(activities.map(a => a['Ментор']).filter(Boolean))).sort();
@@ -70,16 +96,16 @@ function JournalView({ activities }: { activities: any[] }) {
            <table className="w-full text-left border-collapse text-sm">
              <thead>
                <tr className="border-b-2 border-gray-200">
-                 <th className="py-2 px-2">Период</th>
-                 <th className="py-2 px-2">Дата</th>
-                 <th className="py-2 px-2">Тип активности</th>
-                 <th className="py-2 px-2">Ментор</th>
-                 <th className="py-2 px-2">Программа/Поток</th>
-                 <th className="py-2 px-2 text-right">Кол-во</th>
+                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Период')}>Период{renderSortIcon('Период')}</th>
+                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата проведения')}>Дата{renderSortIcon('Дата проведения')}</th>
+                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Тип активности')}>Тип активности{renderSortIcon('Тип активности')}</th>
+                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Ментор')}>Ментор{renderSortIcon('Ментор')}</th>
+                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Программа')}>Программа/Поток{renderSortIcon('Программа')}</th>
+                 <th className="py-2 px-2 text-right cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Кол-во')}>Кол-во{renderSortIcon('Кол-во')}</th>
                </tr>
              </thead>
              <tbody>
-               {filtered.slice(0,100).map(a => (
+               {paginatedData.map(a => (
                  <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedActivity(a)}>
                    <td className="py-1.5 px-2 text-gray-500">{a['Период']}</td>
                    <td className="py-1.5 px-2">{a['Дата проведения']}</td>
@@ -89,10 +115,20 @@ function JournalView({ activities }: { activities: any[] }) {
                    <td className="py-1.5 px-2 text-right">{a['Кол-во'] || a['Кол-во активностей']}</td>
                  </tr>
                ))}
-               {filtered.length > 100 && <tr><td colSpan={6} className="py-4 text-center text-gray-400">Показаны 100 из {filtered.length}</td></tr>}
              </tbody>
            </table>
          </div>
+         <Pagination
+           currentPage={currentPage}
+           setCurrentPage={setCurrentPage}
+           pageSize={pageSize}
+           setPageSize={setPageSize}
+           totalPages={totalPages}
+           startIndex={startIndex}
+           endIndex={endIndex}
+           totalItems={totalItems}
+           grandTotal={activities.length}
+         />
       </div>
       {selectedActivity && <ActivityPanel activity={selectedActivity} allRecords={activities} onClose={() => setSelectedActivity(null)} />}
     </div>

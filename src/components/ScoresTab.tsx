@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, Filter, ExternalLink, Calendar, User, Layers, Award, Star, Search, Check, Info } from 'lucide-react';
+import { useSort } from '../lib/useSort';
+import { usePagination } from '../lib/usePagination';
+import Pagination from './Pagination';
 
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 
@@ -103,8 +106,10 @@ function CallScoresView() {
     );
   }, [scores, search]);
 
+  const { handleSort, renderSortIcon, sortData } = useSort();
+
   // Group flat database records into student rows
-  const studentRows = useMemo(() => {
+  const rawStudentRows = useMemo(() => {
     const studentsMap: Record<string, {
       fio: string;
       email: string;
@@ -133,8 +138,37 @@ function CallScoresView() {
       }
     });
 
-    return Object.values(studentsMap).sort((a, b) => a.fio.localeCompare(b.fio));
+    return Object.values(studentsMap).map(r => {
+      const flatObj: any = { ...r };
+      flatObj['Студент'] = r.fio;
+      for (let m = 1; m <= 12; m++) {
+        const cellRecord = r.months[m];
+        flatObj[String(m)] = cellRecord ? calcAverageCalls(cellRecord) : 0;
+      }
+      return flatObj;
+    });
   }, [filteredScores]);
+
+  const studentRows = useMemo(() => {
+    return sortData(rawStudentRows);
+  }, [rawStudentRows, sortData]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(studentRows, [search], 'pageSize_call_scores');
+
+  const grandTotalUniqueStudents = useMemo(() => {
+    const studentKeys = new Set(scores.map(s => (s['ФИО'] || '').trim() || (s['Почта'] || '').trim()).filter(Boolean));
+    return studentKeys.size;
+  }, [scores]);
 
   // Mentor Summary calculation
   const mentorSummaries = useMemo(() => {
@@ -264,14 +298,17 @@ function CallScoresView() {
             <table className="w-full text-left border-collapse text-xs md:text-sm">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold text-[10px]">
                 <tr>
-                  <th className="py-3 px-4 border-r border-slate-200 min-w-[200px] sticky left-0 bg-slate-100 z-10">Студент</th>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <th key={i + 1} className="py-3 px-2 text-center border-r border-slate-200 min-w-[75px]">{i + 1}</th>
-                  ))}
+                  <th className="py-3 px-4 border-r border-slate-200 min-w-[200px] sticky left-0 bg-slate-100 z-10 cursor-pointer hover:bg-slate-200 select-none" onClick={() => handleSort('Студент')}>Студент{renderSortIcon('Студент')}</th>
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const mName = String(i + 1);
+                    return (
+                      <th key={i + 1} className="py-3 px-2 text-center border-r border-slate-200 min-w-[75px] cursor-pointer hover:bg-slate-200 select-none" onClick={() => handleSort(mName)}>{i + 1}{renderSortIcon(mName)}</th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {studentRows.map(row => (
+                {paginatedData.map(row => (
                   <tr key={row.fio} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="py-2.5 px-4 border-r border-slate-200 font-medium text-slate-800 sticky left-0 bg-white group-hover:bg-slate-50/80 z-10">
                       <div>
@@ -322,7 +359,7 @@ function CallScoresView() {
                     })}
                   </tr>
                 ))}
-                {studentRows.length === 0 && (
+                {paginatedData.length === 0 && (
                   <tr>
                     <td colSpan={13} className="py-12 text-center text-slate-400">
                       Студенты не найдены
@@ -332,6 +369,18 @@ function CallScoresView() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            totalPages={totalPages}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            totalItems={totalItems}
+            grandTotal={grandTotalUniqueStudents}
+          />
         </div>
       </div>
 
@@ -685,9 +734,11 @@ function OsReviewsView() {
     return Array.from(mSet).sort();
   }, [reviews]);
 
-  // Active filters and query matching
-  const filteredReviews = useMemo(() => {
-    return reviews.filter((r: any) => {
+  const { handleSort, renderSortIcon, sortData } = useSort();
+
+  // Active filters, query matching, normalization, and sorting
+  const sortedReviews = useMemo(() => {
+    const filtered = reviews.filter((r: any) => {
       const m = String(r['month'] || r['Месяц'] || '').trim();
       const mentor = String(r['Ментор'] || r['ментор'] || r['mentor'] || '').trim();
 
@@ -696,7 +747,34 @@ function OsReviewsView() {
 
       return matchesMonth && matchesMentor;
     });
-  }, [reviews, filterMonth, filterMentor]);
+
+    const normalized = filtered.map((r: any) => {
+      const norm: any = { ...r };
+      norm['Месяц'] = r['month'] || r['Месяц'] || '';
+      norm['Ментор'] = r['Ментор'] || r['ментор'] || r['mentor'] || '';
+      norm['Ссылка на отзыв'] = r['Ссылка на отзыв'] || r['ссылка'] || r['link'] || '';
+      ratingKeys.forEach(k => {
+        norm[k] = r[k] !== undefined && r[k] !== '' ? Number(r[k]) : '';
+      });
+      return norm;
+    });
+
+    return sortData(normalized);
+  }, [reviews, filterMonth, filterMentor, ratingKeys, sortData]);
+
+  const filteredReviews = sortedReviews;
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(filteredReviews, [filterMonth, filterMentor], 'pageSize_os_reviews');
 
   // Mentor average calculations for os_reviews
   const mentorOsSummaries = useMemo(() => {
@@ -866,19 +944,19 @@ function OsReviewsView() {
             <table className="w-full text-left border-collapse text-xs md:text-sm">
               <thead className="bg-slate-100 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold text-[10px]">
                 <tr>
-                  <th className="py-3 px-4 border-r border-slate-100 min-w-[100px]">Месяц</th>
-                  <th className="py-3 px-4 border-r border-slate-100 min-w-[150px]">Ментор</th>
+                  <th className="py-3 px-4 border-r border-slate-100 min-w-[100px] cursor-pointer hover:bg-slate-200 select-none" onClick={() => handleSort('Месяц')}>Месяц{renderSortIcon('Месяц')}</th>
+                  <th className="py-3 px-4 border-r border-slate-100 min-w-[150px] cursor-pointer hover:bg-slate-200 select-none" onClick={() => handleSort('Ментор')}>Ментор{renderSortIcon('Ментор')}</th>
                   {ratingKeys.map(k => (
-                    <th key={k} className="py-3 px-2 text-center border-r border-slate-100 min-w-[80px]" title={k}>
-                      {k}
+                    <th key={k} className="py-3 px-2 text-center border-r border-slate-100 min-w-[80px] cursor-pointer hover:bg-slate-200 select-none" title={k} onClick={() => handleSort(k)}>
+                      {k}{renderSortIcon(k)}
                     </th>
                   ))}
-                  <th className="py-3 px-4 border-r border-slate-100 min-w-[120px]">Отзыв</th>
+                  <th className="py-3 px-4 border-r border-slate-100 min-w-[120px] cursor-pointer hover:bg-slate-200 select-none" onClick={() => handleSort('Ссылка на отзыв')}>Отзыв{renderSortIcon('Ссылка на отзыв')}</th>
                   <th className="py-3 px-4 text-center min-w-[90px]">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredReviews.map(r => (
+                {paginatedData.map(r => (
                   <tr key={r.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="py-2.5 px-4 border-r border-slate-100 font-medium text-slate-700">
                       {r['month'] || r['Месяц'] || '—'}
@@ -926,7 +1004,7 @@ function OsReviewsView() {
                     </td>
                   </tr>
                 ))}
-                {filteredReviews.length === 0 && (
+                {paginatedData.length === 0 && (
                   <tr>
                     <td colSpan={ratingKeys.length + 4} className="py-12 text-center text-slate-400">
                       Отзывы не найдены
@@ -936,6 +1014,18 @@ function OsReviewsView() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            totalPages={totalPages}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            totalItems={totalItems}
+            grandTotal={reviews.length}
+          />
         </div>
       </div>
 

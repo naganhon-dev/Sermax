@@ -2,6 +2,9 @@ import { useState, useMemo } from 'react';
 import { useCollection, updateRecord, createRecord, deleteRecord } from '../lib/useCollection';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Search, Plus, Trash2, X, Filter } from 'lucide-react';
+import { useSort } from '../lib/useSort';
+import { usePagination } from '../lib/usePagination';
+import Pagination from './Pagination';
 
 export default function StudentsTab({ targetStudent }: { targetStudent?: any }) {
   const [subTab, setSubTab] = useState('registry'); // registry, graduates, blacklist
@@ -40,6 +43,8 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   const [packageFilter, setPackageFilter] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(targetStudent || null);
 
+  const { handleSort, renderSortIcon, sortData } = useSort();
+
   const filtered = useMemo(() => {
     return students.filter((s: any) => {
       // Program check
@@ -63,6 +68,20 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
       return true;
     });
   }, [students, program, search, statusFilter, packageFilter]);
+
+  const sortedData = useMemo(() => sortData(filtered), [filtered, sortData]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination(sortedData, [program, search, statusFilter, packageFilter], `pageSize_${collectionName}`);
 
   const statuses = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -108,18 +127,18 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
              <table className="w-full text-left border-collapse text-sm">
                <thead>
                  <tr className="border-b-2 border-gray-200">
-                   <th className="py-2 px-2">ФИО</th>
-                   <th className="py-2 px-2">Почта</th>
-                   <th className="py-2 px-2">Телефон</th>
-                   <th className="py-2 px-2">Пакет</th>
-                   <th className="py-2 px-2">Статус</th>
-                   <th className="py-2 px-2">Старт</th>
-                   <th className="py-2 px-2">Выпуск</th>
-                   <th className="py-2 px-2">Комментарий</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('ФИО')}>ФИО{renderSortIcon('ФИО')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Почта')}>Почта{renderSortIcon('Почта')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Телефон')}>Телефон{renderSortIcon('Телефон')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Пакет обучения')}>Пакет{renderSortIcon('Пакет обучения')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Статус')}>Статус{renderSortIcon('Статус')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата старта')}>Старт{renderSortIcon('Дата старта')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата выпуска')}>Выпуск{renderSortIcon('Дата выпуска')}</th>
+                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Комментарий')}>Комментарий{renderSortIcon('Комментарий')}</th>
                  </tr>
                </thead>
                <tbody>
-                 {filtered.slice(0, 100).map((s: any) => (
+                 {paginatedData.map((s: any) => (
                    <tr key={s.id} onClick={() => setSelectedStudent(s)} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer">
                      <td className="py-1 px-2 relative">
                         {s._color && <div className="absolute left-0 top-0 bottom-0 w-1" style={{backgroundColor: s._color}} />}
@@ -136,11 +155,22 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                      <td className="py-1 px-2 text-gray-500 truncate max-w-[150px]">{s['Комментарий']}</td>
                    </tr>
                  ))}
-                 {filtered.length > 100 && <tr><td colSpan={8} className="py-2 text-center text-gray-400">Показаны первые 100 из {filtered.length}</td></tr>}
                </tbody>
              </table>
-          </div>
-       </div>
+           </div>
+
+           <Pagination
+             currentPage={currentPage}
+             setCurrentPage={setCurrentPage}
+             pageSize={pageSize}
+             setPageSize={setPageSize}
+             totalPages={totalPages}
+             startIndex={startIndex}
+             endIndex={endIndex}
+             totalItems={totalItems}
+             grandTotal={students.length}
+           />
+        </div>
 
        {selectedStudent && (
          <StudentPanel student={selectedStudent} collectionName={collectionName} allRecords={students} onClose={() => setSelectedStudent(null)} />
