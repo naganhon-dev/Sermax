@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useCollection } from '../lib/useCollection';
 import { Users, Phone, Clock, FileText, Layers, Calendar, ChevronRight } from 'lucide-react';
+import { canonStatus } from '../lib/status';
 
 const MONTH_NAMES = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -50,7 +51,7 @@ export default function WorkloadTab() {
     if (!activeMentor) return 0;
     return students.filter((s: any) => {
       const m = (s['Ментор'] || s['ментор'] || '').trim();
-      const status = s['Статус'] || '';
+      const status = canonStatus(s['Статус']);
       return m === activeMentor && status.includes('Учится');
     }).length;
   }, [students, activeMentor]);
@@ -186,7 +187,7 @@ export default function WorkloadTab() {
       if (m !== activeMentor) return;
 
       const program = s['Пакет обучения'] || s['пакет обучения'] || 'Не указан';
-      const isActive = (s['Статус'] || '').includes('Учится');
+      const isActive = canonStatus(s['Статус']).includes('Учится');
 
       if (!counts[program]) {
         counts[program] = { total: 0, active: 0 };

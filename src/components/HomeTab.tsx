@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useCollection } from '../lib/useCollection';
 import { Search, Users, Activity, Star } from 'lucide-react';
+import { canonStatus } from '../lib/status';
 
 export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) => void }) {
   const { data: students } = useCollection('students');
@@ -10,7 +11,7 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
 
   const [search, setSearch] = useState('');
 
-  const studyingCount = useMemo(() => students.filter(s => s['Статус'] && s['Статус'].includes('Учится')).length, [students]);
+  const studyingCount = useMemo(() => students.filter(s => canonStatus(s['Статус']).includes('Учится')).length, [students]);
   
   const currentMonthActivities = useMemo(() => {
      // Usually period is something like "Октябрь 2026" or similar. We just count latest.
@@ -78,7 +79,7 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
                      <div className="font-bold">{s['ФИО']}</div>
                      <div className="text-sm text-gray-500">{s['Почта']} • {s['Телефон']}</div>
                    </div>
-                   <div className="text-sm px-2 py-1 bg-blue-100 text-blue-800 rounded">{s['Статус']}</div>
+                   <div className="text-sm px-2 py-1 bg-blue-100 text-blue-800 rounded">{canonStatus(s['Статус'])}</div>
                  </div>
                )) : <div className="p-4 text-gray-500">Ничего не найдено</div>}
             </div>

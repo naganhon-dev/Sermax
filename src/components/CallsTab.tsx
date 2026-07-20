@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment, FormEvent } from 'react';
 import { useCollection, createRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, ChevronRight, ChevronDown, ChevronUp, Search, Calendar, Clock } from 'lucide-react';
+import { canonStatus } from '../lib/status';
 
 function toText(v: any): string {
   if (v == null) return '';
@@ -102,7 +103,7 @@ export default function CallsTab() {
     students.forEach((s: any) => {
       const email = toText(s['Почта']).trim().toLowerCase();
       if (email) {
-        map[email] = toText(s['Статус']).trim();
+        map[email] = canonStatus(s['Статус']);
       }
     });
     return map;

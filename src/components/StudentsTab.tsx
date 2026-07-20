@@ -6,6 +6,7 @@ import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
 import { auth } from '../firebase';
 import { useResizableColumns } from '../lib/useResizableColumns';
+import { canonStatus, STANDARD_STATUSES } from '../lib/status';
 
 export default function StudentsTab({ targetStudent }: { targetStudent?: any }) {
   const [subTab, setSubTab] = useState('registry'); // registry, graduates, blacklist
@@ -72,7 +73,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
          if (!progMatch) return false;
       }
       
-      if (statusFilter && s['Статус'] !== statusFilter) return false;
+      if (statusFilter && canonStatus(s['Статус']) !== statusFilter) return false;
       if (packageFilter && s['Пакет обучения'] !== packageFilter) return false;
 
       if (search) {
@@ -103,7 +104,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   const statuses = useMemo(() => {
     const counts: Record<string, number> = {};
     filtered.forEach((s: any) => {
-      const st = s['Статус'] || 'Не указан';
+      const st = canonStatus(s['Статус']) || 'Не указан';
       counts[st] = (counts[st] || 0) + 1;
     });
     return counts;
@@ -124,7 +125,12 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                      <Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
                      <input placeholder="Поиск (ФИО, почта, тел)..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-2 py-1 border border-gray-300 rounded text-sm w-64" />
                    </div>
-                   <input placeholder="Статус" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm w-32" />
+                   <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
+                      <option value="">Все статусы</option>
+                      {STANDARD_STATUSES.map(st => (
+                         <option key={st} value={st}>{st}</option>
+                      ))}
+                   </select>
                    <input placeholder="Пакет" value={packageFilter} onChange={e => setPackageFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm w-32" />
                 </div>
                 <div className="flex gap-2">
@@ -191,8 +197,8 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                      <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.email, maxWidth: widths.email, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Почта']}>{s['Почта']}</td>
                      <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.phone, maxWidth: widths.phone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Телефон']}>{s['Телефон']}</td>
                      <td className="py-1.5 px-2 truncate" style={{ width: widths.packet, maxWidth: widths.packet, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Пакет обучения']}>{s['Пакет обучения']}</td>
-                     <td className="py-1.5 px-2 truncate" style={{ width: widths.status, maxWidth: widths.status, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Статус']}>
-                        <StatusBadge status={s['Статус']} />
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.status, maxWidth: widths.status, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={canonStatus(s['Статус'])}>
+                        <StatusBadge status={canonStatus(s['Статус'])} />
                      </td>
                      <td className="py-1.5 px-2 truncate" style={{ width: widths.start, maxWidth: widths.start, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Дата старта']}>{s['Дата старта']}</td>
                      <td className="py-1.5 px-2 truncate" style={{ width: widths.graduate, maxWidth: widths.graduate, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Дата выпуска']}>{s['Дата выпуска']}</td>
@@ -252,6 +258,9 @@ const isDateField = (k: string) => {
 function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
   const isNew = student._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
+  const [showConfirmDel, setShowConfirmDel] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const save = () => {
     if (isNew) createRecord(collectionName, data);
@@ -260,16 +269,18 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const del = async () => {
-    if (confirm("Удалить запись?")) {
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
       await deleteRecord(collectionName, data.id, data);
       onClose();
+    } catch (err: any) {
+      console.error("Failed to delete student:", err);
+      setDeleteError(err?.message || "Не удалось удалить. Проверьте права доступа.");
+      setIsDeleting(false);
     }
   };
 
-  const uniqueStatuses = Array.from(new Set([
-    "Учится", "Не приступал", "Заморозка", "Блокировка", "Выпустился", "Возврат", "Бронь",
-    ...allRecords.map(r => r['Статус']).filter(Boolean)
-  ]));
   const uniquePackages = Array.from(new Set(allRecords.map(r => r['Пакет обучения']).filter(Boolean)));
   const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор']).filter(Boolean)));
   const uniqueGroups = Array.from(new Set(allRecords.map(r => r['Группа']).filter(Boolean)));
@@ -284,9 +295,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
     }
 
-    if (k === 'Статус' || k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа' || k === 'Рынок') {
+    if (k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа' || k === 'Рынок') {
       let options: string[] = [];
-      if (k === 'Статус') options = uniqueStatuses;
       if (k === 'Пакет обучения') options = uniquePackages;
       if (k === 'Ментор') options = uniqueMentors;
       if (k === 'Группа') options = uniqueGroups;
@@ -361,7 +371,24 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Статус</label>
-          {renderInput('Статус', true)}
+          <select
+            className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-sm"
+            value={data['Статус'] || ''}
+            onChange={e => setData({ ...data, 'Статус': e.target.value })}
+          >
+            <option value="">— не указан —</option>
+            {STANDARD_STATUSES.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+            {data['Статус'] && !STANDARD_STATUSES.includes(data['Статус']) && (
+              <option value={data['Статус']}>{data['Статус']} (нестандартный)</option>
+            )}
+          </select>
+          {data['Статус'] && !STANDARD_STATUSES.includes(data['Статус']) && (
+            <p className="text-yellow-600 text-xs mt-1 font-medium bg-yellow-50 border border-yellow-100 rounded px-2 py-1">
+              Нестандартный статус, выберите правильный
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Пакет обучения</label>
@@ -420,10 +447,43 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           </div>
         )}
       </div>
-      <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between">
+      {deleteError && (
+        <div className="px-4 py-2 bg-red-50 border-t border-red-100 text-red-600 text-xs font-medium">
+          {deleteError}
+        </div>
+      )}
+      <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
         {!isNew ? (
-           <button onClick={del} className="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-sm flex items-center gap-1"><Trash2 className="w-4 h-4"/> Удалить</button>
-        ) : <div/>}
+          showConfirmDel ? (
+            <div className="flex gap-1.5 items-center">
+              <span className="text-xs text-red-600 font-medium">Удалить студента?</span>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={del}
+                className="bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 px-2.5 py-1 rounded text-xs font-semibold shadow-sm transition-colors"
+              >
+                {isDeleting ? 'Удаление...' : 'Да'}
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowConfirmDel(false)}
+                className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 px-2 py-1 rounded text-xs transition-colors"
+              >
+                Нет
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowConfirmDel(true)}
+              className="text-red-500 hover:bg-red-50 px-3 py-1 rounded text-sm flex items-center gap-1 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" /> Удалить
+            </button>
+          )
+        ) : <div />}
         <button onClick={save} className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">Сохранить</button>
       </div>
     </div>
