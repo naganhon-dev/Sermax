@@ -12,7 +12,7 @@ export default function StudentsTab({ targetStudent }: { targetStudent?: any }) 
         {[
           { id: 'registry', label: 'Реестр' },
           { id: 'graduates', label: 'Выпускники' },
-          { id: 'blacklist', label: 'ЧС для рассылки' },
+          { id: 'blacklist', label: 'Ручная рассылка' },
         ].map(t => (
           <button
             key={t.id}
@@ -193,12 +193,13 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const uniqueStatuses = Array.from(new Set([
-    "Учится","Не приступал","Заморозка","Блокировка","Выпустился","Возврат",
+    "Учится", "Не приступал", "Заморозка", "Блокировка", "Выпустился", "Возврат", "Бронь",
     ...allRecords.map(r => r['Статус']).filter(Boolean)
   ]));
   const uniquePackages = Array.from(new Set(allRecords.map(r => r['Пакет обучения']).filter(Boolean)));
   const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор']).filter(Boolean)));
   const uniqueGroups = Array.from(new Set(allRecords.map(r => r['Группа']).filter(Boolean)));
+  const uniqueMarkets = Array.from(new Set(allRecords.map(r => r['Рынок']).filter(Boolean)));
 
   const renderInput = (k: string, isMain = false) => {
     const val = data[k] || '';
@@ -209,12 +210,13 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
     }
 
-    if (k === 'Статус' || k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа') {
+    if (k === 'Статус' || k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа' || k === 'Рынок') {
       let options: string[] = [];
       if (k === 'Статус') options = uniqueStatuses;
       if (k === 'Пакет обучения') options = uniquePackages;
       if (k === 'Ментор') options = uniqueMentors;
       if (k === 'Группа') options = uniqueGroups;
+      if (k === 'Рынок') options = uniqueMarkets;
       const listId = `list-${k.replace(/\s+/g, '-')}`;
       return (
         <>
@@ -235,6 +237,35 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
 
   // grouping logic can be implemented manually
   const allKeys = Object.keys(data).filter(k => !k.startsWith('_') && k !== 'id');
+
+  const questionnaireKeys = ["Анкета 2/3", "Отправки", "Звонки", "Результаты"];
+
+  const getYesNoVal = (k: string) => {
+    const val = data[k] !== undefined ? data[k] : data[k.toLowerCase()];
+    if (val === undefined || val === null) return "";
+    const s = String(val).trim().toLowerCase();
+    if (s === 'да' || s === 'yes' || val === true) return "Да";
+    if (s === 'нет' || s === 'no' || val === false) return "Нет";
+    return "";
+  };
+
+  const setYesNoVal = (k: string, v: string) => {
+    const updated = { ...data };
+    if (k.toLowerCase() in updated) {
+      delete updated[k.toLowerCase()];
+    }
+    updated[k] = v;
+    setData(updated);
+  };
+
+  const excludedKeys = [
+    'ФИО', 'Почта', 'Телефон', 'Статус', 'Пакет обучения', 'Комментарий', 'Рынок',
+    'Анкета 2/3', 'Отправки', 'Звонки', 'Результаты',
+    'анкета 2/3', 'отправки', 'звонки', 'результаты',
+    'Анкета 2', 'Анкета 3', 'анкета 2', 'анкета 3'
+  ];
+
+  const dynamicKeys = allKeys.filter(k => !excludedKeys.includes(k));
 
   return (
     <div className="w-96 border-l border-gray-200 bg-white shadow-xl flex flex-col">
@@ -264,19 +295,57 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           {renderInput('Пакет обучения', true)}
         </div>
         <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Рынок</label>
+          {renderInput('Рынок', true)}
+        </div>
+        <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Комментарий</label>
           {renderInput('Комментарий', true)}
         </div>
-        {/* Other dynamic fields */}
+
+        {/* Анкеты Section */}
         <div className="pt-4 border-t border-gray-100">
-          <h4 className="font-semibold text-sm mb-2 text-gray-700">Остальные поля</h4>
-          {allKeys.filter(k => !['ФИО','Почта','Телефон','Статус','Пакет обучения','Комментарий'].includes(k)).map(k => (
-            <div key={k} className="mb-2">
-               <label className="block text-xs font-medium text-gray-400 mb-1">{k}</label>
-               {renderInput(k, false)}
-            </div>
-          ))}
+          <h4 className="font-semibold text-sm mb-2 text-gray-700">Анкеты</h4>
+          <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 flex flex-col gap-2">
+            {questionnaireKeys.map(k => {
+              const currentVal = getYesNoVal(k);
+              return (
+                <div key={k} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-b-0">
+                  <span className="text-sm font-medium text-gray-600">{k}</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setYesNoVal(k, currentVal === "Да" ? "" : "Да")}
+                      className={`px-3 py-1 text-xs font-semibold rounded border transition-colors ${currentVal === "Да" ? 'bg-green-600 border-green-600 text-white shadow-sm' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      Да
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setYesNoVal(k, currentVal === "Нет" ? "" : "Нет")}
+                      className={`px-3 py-1 text-xs font-semibold rounded border transition-colors ${currentVal === "Нет" ? 'bg-red-600 border-red-600 text-white shadow-sm' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                    >
+                      Нет
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
+
+        {/* Other dynamic fields */}
+        {dynamicKeys.length > 0 && (
+          <div className="pt-4 border-t border-gray-100">
+            <h4 className="font-semibold text-sm mb-2 text-gray-700">Остальные поля</h4>
+            {dynamicKeys.map(k => (
+              <div key={k} className="mb-2">
+                 <label className="block text-xs font-medium text-gray-400 mb-1">{k}</label>
+                 {renderInput(k, false)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between">
         {!isNew ? (

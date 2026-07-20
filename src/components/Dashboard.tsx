@@ -9,6 +9,7 @@ import CallsTab from './CallsTab';
 import ScoresTab from './ScoresTab';
 import AmgTab from './AmgTab';
 import ArchiveTab from './ArchiveTab';
+import WorkloadTab from './WorkloadTab';
 import { exportAllData } from '../lib/export';
 
 export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
@@ -22,6 +23,7 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
     { id: 'scores', label: 'Оценки' },
     { id: 'webinars', label: 'Вебинары' },
     { id: 'activities', label: 'Активности' },
+    { id: 'workload', label: 'Нагрузка' },
     { id: 'amg', label: 'АМГ' },
     { id: 'archive', label: 'Архив' },
   ];
@@ -99,6 +101,7 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
              {activeTab === 'scores' && <ScoresTab />}
              {activeTab === 'webinars' && <WebinarsTab />}
              {activeTab === 'activities' && <ActivitiesTab />}
+             {activeTab === 'workload' && <WorkloadTab />}
              {activeTab === 'amg' && <AmgTab />}
              {activeTab === 'archive' && <ArchiveTab />}
           </div>
