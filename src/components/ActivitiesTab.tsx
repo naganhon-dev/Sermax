@@ -44,6 +44,21 @@ function JournalView({ activities }: { activities: any[] }) {
 
   const { handleSort, renderSortIcon, sortData } = useSort();
 
+  const userEmail = auth?.currentUser?.email || 'guest';
+  const defaultWidths = {
+    period: 100,
+    date: 120,
+    type: 200,
+    mentor: 180,
+    program: 220,
+    qty: 100,
+  };
+  const { widths, handleResizeStart, resetWidths } = useResizableColumns(
+    'activities_width',
+    defaultWidths,
+    userEmail
+  );
+
   const filtered = useMemo(() => {
     return activities.filter(a => {
       if (period && a['Период'] !== period) return false;
@@ -90,33 +105,59 @@ function JournalView({ activities }: { activities: any[] }) {
                  {mentors.map((m: any) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
-            <button onClick={() => setSelectedActivity({ _isNew: true })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700">
-               <Plus className="w-4 h-4" /> Добавить
-            </button>
+            <div className="flex gap-2">
+               <button onClick={resetWidths} className="text-gray-500 hover:text-gray-700 text-xs px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors" title="Сбросить ширину колонок">
+                 Сбросить ширину
+               </button>
+               <button onClick={() => setSelectedActivity({ _isNew: true })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700">
+                  <Plus className="w-4 h-4" /> Добавить
+               </button>
+            </div>
          </div>
-         <div className="flex-1 overflow-auto p-4">
-           <table className="w-full text-left border-collapse text-sm">
+         <div className="flex-1 overflow-auto p-4 relative">
+           <table className="text-left border-collapse text-sm" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
              <thead>
                <tr className="border-b-2 border-gray-200">
-                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Период')}>Период{renderSortIcon('Период')}</th>
-                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата проведения')}>Дата{renderSortIcon('Дата проведения')}</th>
-                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Тип активности')}>Тип активности{renderSortIcon('Тип активности')}</th>
-                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Ментор')}>Ментор{renderSortIcon('Ментор')}</th>
-                 <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Программа')}>Программа/Поток{renderSortIcon('Программа')}</th>
-                 <th className="py-2 px-2 text-right cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Кол-во')}>Кол-во{renderSortIcon('Кол-во')}</th>
+                 <th style={{ width: widths.period, minWidth: widths.period, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Период')} className="w-full h-full pr-4">{renderSortIcon('Период')}Период</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'period')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
+                 <th style={{ width: widths.date, minWidth: widths.date, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Дата проведения')} className="w-full h-full pr-4">{renderSortIcon('Дата проведения')}Дата</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'date')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
+                 <th style={{ width: widths.type, minWidth: widths.type, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Тип активности')} className="w-full h-full pr-4">{renderSortIcon('Тип активности')}Тип активности</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'type')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
+                 <th style={{ width: widths.mentor, minWidth: widths.mentor, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Ментор')} className="w-full h-full pr-4">{renderSortIcon('Ментор')}Ментор</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'mentor')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
+                 <th style={{ width: widths.program, minWidth: widths.program, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Программа')} className="w-full h-full pr-4">{renderSortIcon('Программа')}Программа/Поток</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'program')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
+                 <th style={{ width: widths.qty, minWidth: widths.qty, position: 'sticky', top: 0 }} className="py-2 px-2 text-right cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                   <div onClick={() => handleSort('Кол-во')} className="w-full h-full pl-4">{renderSortIcon('Кол-во')}Кол-во</div>
+                   <div onMouseDown={e => handleResizeStart(e, 'qty')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                 </th>
                </tr>
              </thead>
              <tbody>
-               {paginatedData.map(a => (
-                 <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedActivity(a)}>
-                   <td className="py-1.5 px-2 text-gray-500">{a['Период']}</td>
-                   <td className="py-1.5 px-2">{a['Дата проведения']}</td>
-                   <td className="py-1.5 px-2">{a['Тип активности']}</td>
-                   <td className="py-1.5 px-2 font-medium">{a['Ментор']}</td>
-                   <td className="py-1.5 px-2 text-gray-600">{a['Программа']} {a['Поток']}</td>
-                   <td className="py-1.5 px-2 text-right">{a['Кол-во'] || a['Кол-во активностей']}</td>
-                 </tr>
-               ))}
+               {paginatedData.map(a => {
+                 const programText = `${a['Программа'] || ''} ${a['Поток'] || ''}`.trim();
+                 return (
+                   <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedActivity(a)}>
+                     <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.period, maxWidth: widths.period, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a['Период']}>{a['Период']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.date, maxWidth: widths.date, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a['Дата проведения']}>{a['Дата проведения']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.type, maxWidth: widths.type, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a['Тип активности']}>{a['Тип активности']}</td>
+                     <td className="py-1.5 px-2 font-medium truncate" style={{ width: widths.mentor, maxWidth: widths.mentor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a['Ментор']}>{a['Ментор']}</td>
+                     <td className="py-1.5 px-2 text-gray-600 truncate" style={{ width: widths.program, maxWidth: widths.program, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={programText}>{programText}</td>
+                     <td className="py-1.5 px-2 text-right truncate" style={{ width: widths.qty, maxWidth: widths.qty, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(a['Кол-во'] || a['Кол-во активностей'] || '')}>{a['Кол-во'] || a['Кол-во активностей']}</td>
+                   </tr>
+                 );
+               })}
              </tbody>
            </table>
          </div>

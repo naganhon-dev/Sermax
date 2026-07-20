@@ -4,6 +4,8 @@ import { Plus, Search, Trash2, X, Eye, EyeOff } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
+import { auth } from '../firebase';
+import { useResizableColumns } from '../lib/useResizableColumns';
 
 export default function WebinarsTab() {
   const [view, setView] = useState('upcoming'); // upcoming, all, calendar
@@ -64,6 +66,22 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
   const [search, setSearch] = useState('');
 
   const { handleSort, renderSortIcon, sortData } = useSort();
+
+  const userEmail = auth?.currentUser?.email || 'guest';
+  const defaultWidths = {
+    date: 100,
+    time: 80,
+    theme: 300,
+    groups: 150,
+    links: 120,
+    password: 120,
+    host: 150,
+  };
+  const { widths, handleResizeStart, resetWidths } = useResizableColumns(
+    'webinars_width',
+    defaultWidths,
+    userEmail
+  );
   
   const filtered = useMemo(() => {
     let list = [...events];
@@ -109,55 +127,83 @@ function WebinarsList({ view, events, onSelect }: { view: string, events: any[],
   const [showPwd, setShowPwd] = useState<Record<string, boolean>>({});
 
   return (
-    <div className="flex flex-col gap-4">
-      {view === 'all' && (
-        <div className="relative w-64">
-          <Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
-          <input placeholder="Поиск по теме/ведущему..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-2 py-1 border border-gray-300 rounded text-sm w-full" />
-        </div>
-      )}
+    <div className="flex flex-col gap-4 h-full">
+      <div className="flex justify-between items-center gap-4">
+        {view === 'all' ? (
+          <div className="relative w-64">
+            <Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
+            <input placeholder="Поиск по теме/ведущему..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-2 py-1 border border-gray-300 rounded text-sm w-full" />
+          </div>
+        ) : <div />}
+        <button onClick={resetWidths} className="text-gray-500 hover:text-gray-700 text-xs px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors" title="Сбросить ширину колонок">
+          Сбросить ширину
+        </button>
+      </div>
       
-      <table className="w-full text-left border-collapse text-sm">
-         <thead>
-           <tr className="border-b-2 border-gray-200">
-             <th className="py-2 px-2 w-24 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата')}>Дата{renderSortIcon('Дата')}</th>
-             <th className="py-2 px-2 w-16 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Время')}>Время{renderSortIcon('Время')}</th>
-             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Тема')}>Тема{renderSortIcon('Тема')}</th>
-             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Группы клиентов')}>Группы клиентов{renderSortIcon('Группы клиентов')}</th>
-             <th className="py-2 px-2">Ссылки</th>
-             <th className="py-2 px-2 w-32 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Пароль')}>Пароль{renderSortIcon('Пароль')}</th>
-             <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Ведущий')}>Ведущий{renderSortIcon('Ведущий')}</th>
-           </tr>
-         </thead>
-         <tbody>
-           {paginatedData.map(e => (
-             <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => onSelect(e)}>
-               <td className="py-2 px-2 font-medium">{e['Дата']}</td>
-               <td className="py-2 px-2 text-gray-500">{e['Время']}</td>
-               <td className="py-2 px-2 font-medium text-blue-900">{e['Тема']}</td>
-               <td className="py-2 px-2">{e['Группы клиентов']}</td>
-               <td className="py-2 px-2">
-                 <div className="flex flex-col gap-1 text-xs">
-                   {e['Ссылка для студентов'] && <a href={e['Ссылка для студентов']} target="_blank" className="text-blue-600 hover:underline" onClick={ev => ev.stopPropagation()}>Для студентов</a>}
-                   {e['Ссылка на трансляцию'] && <a href={e['Ссылка на трансляцию']} target="_blank" className="text-blue-600 hover:underline" onClick={ev => ev.stopPropagation()}>Трансляция</a>}
-                 </div>
-               </td>
-               <td className="py-2 px-2" onClick={ev => ev.stopPropagation()}>
-                 {e['Пароль'] ? (
-                   <div className="flex items-center gap-1">
-                     <span className="font-mono text-gray-600">{showPwd[e.id] ? e['Пароль'] : '••••••••'}</span>
-                     <button onClick={() => setShowPwd(p => ({...p, [e.id]: !p[e.id]}))} className="text-gray-400 hover:text-gray-700">
-                        {showPwd[e.id] ? <EyeOff className="w-3 h-3"/> : <Eye className="w-3 h-3"/>}
-                     </button>
-                   </div>
-                 ) : <span className="text-gray-300">—</span>}
-               </td>
-               <td className="py-2 px-2">{e['Ведущий']}</td>
+      <div className="flex-1 overflow-auto relative">
+        <table className="text-left border-collapse text-sm" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
+           <thead>
+             <tr className="border-b-2 border-gray-200">
+               <th style={{ width: widths.date, minWidth: widths.date, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Дата')} className="w-full h-full pr-4">{renderSortIcon('Дата')}Дата</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'date')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.time, minWidth: widths.time, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Время')} className="w-full h-full pr-4">{renderSortIcon('Время')}Время</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'time')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.theme, minWidth: widths.theme, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Тема')} className="w-full h-full pr-4">{renderSortIcon('Тема')}Тема</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'theme')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.groups, minWidth: widths.groups, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Группы клиентов')} className="w-full h-full pr-4">{renderSortIcon('Группы клиентов')}Группы клиентов</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'groups')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.links, minWidth: widths.links, position: 'sticky', top: 0 }} className="py-2 px-2 bg-white z-10 relative group">
+                 <div className="w-full h-full pr-4">Ссылки</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'links')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.password, minWidth: widths.password, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Пароль')} className="w-full h-full pr-4">{renderSortIcon('Пароль')}Пароль</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'password')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
+               <th style={{ width: widths.host, minWidth: widths.host, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                 <div onClick={() => handleSort('Ведущий')} className="w-full h-full pr-4">{renderSortIcon('Ведущий')}Ведущий</div>
+                 <div onMouseDown={e => handleResizeStart(e, 'host')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+               </th>
              </tr>
-           ))}
-           {paginatedData.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-500">Нет вебинаров</td></tr>}
-         </tbody>
-      </table>
+           </thead>
+           <tbody>
+             {paginatedData.map(e => (
+               <tr key={e.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => onSelect(e)}>
+                 <td className="py-2 px-2 font-medium truncate" style={{ width: widths.date, maxWidth: widths.date, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Дата']}>{e['Дата']}</td>
+                 <td className="py-2 px-2 text-gray-500 truncate" style={{ width: widths.time, maxWidth: widths.time, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Время']}>{e['Время']}</td>
+                 <td className="py-2 px-2 font-medium text-blue-900 truncate" style={{ width: widths.theme, maxWidth: widths.theme, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Тема']}>{e['Тема']}</td>
+                 <td className="py-2 px-2 truncate" style={{ width: widths.groups, maxWidth: widths.groups, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Группы клиентов']}>{e['Группы клиентов']}</td>
+                 <td className="py-2 px-2 truncate" style={{ width: widths.links, maxWidth: widths.links, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                   <div className="flex flex-col gap-1 text-xs">
+                     {e['Ссылка для студентов'] && <a href={e['Ссылка для студентов']} target="_blank" className="text-blue-600 hover:underline" onClick={ev => ev.stopPropagation()}>Для студентов</a>}
+                     {e['Ссылка на трансляцию'] && <a href={e['Ссылка на трансляцию']} target="_blank" className="text-blue-600 hover:underline" onClick={ev => ev.stopPropagation()}>Трансляция</a>}
+                   </div>
+                 </td>
+                 <td className="py-2 px-2 truncate" style={{ width: widths.password, maxWidth: widths.password, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={ev => ev.stopPropagation()}>
+                   {e['Пароль'] ? (
+                     <div className="flex items-center gap-1">
+                       <span className="font-mono text-gray-600">{showPwd[e.id] ? e['Пароль'] : '••••••••'}</span>
+                       <button onClick={() => setShowPwd(p => ({...p, [e.id]: !p[e.id]}))} className="text-gray-400 hover:text-gray-700">
+                          {showPwd[e.id] ? <EyeOff className="w-3 h-3"/> : <Eye className="w-3 h-3"/>}
+                       </button>
+                     </div>
+                   ) : <span className="text-gray-300">—</span>}
+                 </td>
+                 <td className="py-2 px-2 truncate" style={{ width: widths.host, maxWidth: widths.host, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Ведущий']}>{e['Ведущий']}</td>
+               </tr>
+             ))}
+             {paginatedData.length === 0 && <tr><td colSpan={7} className="py-4 text-center text-gray-500">Нет вебинаров</td></tr>}
+           </tbody>
+        </table>
+      </div>
 
       <Pagination
         currentPage={currentPage}

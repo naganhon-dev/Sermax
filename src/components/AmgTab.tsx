@@ -1,9 +1,11 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useCollection, updateRecord, createRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, ExternalLink } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
+import { auth } from '../firebase';
+import { useResizableColumns } from '../lib/useResizableColumns';
 
 export default function AmgTab() {
   const { data: entries } = useCollection('amg_entries');
@@ -27,6 +29,20 @@ export default function AmgTab() {
   const slotDebts = currentMonthSlots['С долгами'] !== undefined ? currentMonthSlots['С долгами'] : (currentMonthSlots['debts'] !== undefined ? currentMonthSlots['debts'] : '');
 
   const { handleSort, renderSortIcon, sortData } = useSort();
+
+  const userEmail = auth?.currentUser?.email || 'guest';
+  const defaultWidths = {
+    fio: 220,
+    email: 180,
+    debts: 125,
+    monthsToTransfer: 125,
+    section: 170,
+  };
+  const { widths, handleResizeStart, resetWidths } = useResizableColumns(
+    'amg_width',
+    defaultWidths,
+    userEmail
+  );
 
   // Safe field getters for students
   const getFio = (e: any) => e['ФИО'] ?? e['fio'] ?? '';
@@ -261,6 +277,10 @@ export default function AmgTab() {
               onChange={e => saveLimit(Number(e.target.value))} 
             />
           </div>
+
+          <button onClick={resetWidths} className="text-gray-500 hover:text-gray-700 text-xs px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg shadow-sm font-semibold hover:bg-gray-50 transition-colors" title="Сбросить ширину колонок">
+            Сбросить ширину
+          </button>
         </div>
       </div>
 
@@ -300,6 +320,8 @@ export default function AmgTab() {
             handleSort={handleSort}
             renderSortIcon={renderSortIcon}
             sortData={sortData}
+            widths={widths}
+            handleResizeStart={handleResizeStart}
           />
         ))}
 
@@ -314,6 +336,8 @@ export default function AmgTab() {
             handleSort={handleSort}
             renderSortIcon={renderSortIcon}
             sortData={sortData}
+            widths={widths}
+            handleResizeStart={handleResizeStart}
             isUnassigned
           />
         )}
@@ -334,6 +358,8 @@ interface AmgSectionTableProps {
   renderSortIcon: (key: string) => any;
   sortData: (data: any[]) => any[];
   isUnassigned?: boolean;
+  widths: Record<string, number>;
+  handleResizeStart: (e: React.MouseEvent, colId: string) => void;
 }
 
 function AmgSectionTable({
@@ -347,6 +373,8 @@ function AmgSectionTable({
   renderSortIcon,
   sortData,
   isUnassigned = false,
+  widths,
+  handleResizeStart,
 }: AmgSectionTableProps) {
   const sortedEntries = useMemo(() => {
     return sortData(rawEntries);
@@ -392,19 +420,34 @@ function AmgSectionTable({
         )}
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs md:text-sm">
+      <div className="overflow-x-auto relative">
+        <table className="text-left border-collapse text-xs md:text-sm" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
           <thead className={isUnassigned 
             ? "bg-red-50/50 text-red-600 uppercase tracking-wider font-semibold text-[10px] border-b border-red-100"
             : "bg-gray-50 text-gray-500 uppercase tracking-wider font-semibold text-[10px] border-b border-gray-200"
           }>
             <tr>
-              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('ФИО')}>ФИО{renderSortIcon('ФИО')}</th>
-              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Почта')}>Почта{renderSortIcon('Почта')}</th>
-              <th className={`py-2.5 px-4 font-semibold cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Долги')}>Долги{renderSortIcon('Долги')}</th>
-              <th className={`py-2.5 px-4 font-semibold text-center cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('До перехода')}>До перехода{renderSortIcon('До перехода')}</th>
-              <th className={`py-2.5 px-4 font-semibold w-44 cursor-pointer select-none ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`} onClick={() => handleSort('Секция')}>Секция{renderSortIcon('Секция')}</th>
-              <th className="py-2.5 px-4 font-semibold w-12"></th>
+              <th style={{ width: widths.fio, minWidth: widths.fio, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+                <div onClick={() => handleSort('ФИО')} className="w-full h-full pr-4">{renderSortIcon('ФИО')}ФИО</div>
+                <div onMouseDown={e => handleResizeStart(e, 'fio')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+              </th>
+              <th style={{ width: widths.email, minWidth: widths.email, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+                <div onClick={() => handleSort('Почта')} className="w-full h-full pr-4">{renderSortIcon('Почта')}Почта</div>
+                <div onMouseDown={e => handleResizeStart(e, 'email')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+              </th>
+              <th style={{ width: widths.debts, minWidth: widths.debts, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+                <div onClick={() => handleSort('Долги')} className="w-full h-full pr-4">{renderSortIcon('Долги')}Долги</div>
+                <div onMouseDown={e => handleResizeStart(e, 'debts')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+              </th>
+              <th style={{ width: widths.monthsToTransfer, minWidth: widths.monthsToTransfer, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold text-center cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+                <div onClick={() => handleSort('До перехода')} className="w-full h-full pr-4">{renderSortIcon('До перехода')}До перехода</div>
+                <div onMouseDown={e => handleResizeStart(e, 'monthsToTransfer')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+              </th>
+              <th style={{ width: widths.section, minWidth: widths.section, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
+                <div onClick={() => handleSort('Секция')} className="w-full h-full pr-4">{renderSortIcon('Секция')}Секция</div>
+                <div onMouseDown={e => handleResizeStart(e, 'section')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+              </th>
+              <th style={{ width: 50 }} className="py-2.5 px-4 font-semibold"></th>
             </tr>
           </thead>
           <tbody className={`divide-y ${isUnassigned ? 'divide-red-100 bg-white' : 'divide-gray-100'}`}>
@@ -413,7 +456,7 @@ function AmgSectionTable({
                 ? "hover:bg-red-50/10 transition-colors group"
                 : "hover:bg-gray-50/80 transition-colors group"
               }>
-                <td className="py-2 px-4">
+                <td className="py-2 px-4 truncate" style={{ width: widths.fio, maxWidth: widths.fio, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['ФИО'] ?? e['fio'] ?? ''}>
                   <input 
                     className={`w-full bg-transparent border-b border-transparent outline-none font-medium py-0.5 text-xs md:text-sm ${
                       isUnassigned ? 'hover:border-red-300 focus:border-red-500 text-gray-800' : 'hover:border-gray-300 focus:border-blue-500 text-gray-800'
@@ -422,7 +465,7 @@ function AmgSectionTable({
                     onChange={ev => onUpdateStudent(e.id, { 'ФИО': ev.target.value })} 
                   />
                 </td>
-                <td className="py-2 px-4">
+                <td className="py-2 px-4 truncate" style={{ width: widths.email, maxWidth: widths.email, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e['Почта'] ?? e['email'] ?? ''}>
                   <input 
                     className={`w-full bg-transparent text-gray-500 border-b border-transparent outline-none py-0.5 text-xs md:text-sm ${
                       isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
@@ -431,7 +474,7 @@ function AmgSectionTable({
                     onChange={ev => onUpdateStudent(e.id, { 'Почта': ev.target.value })} 
                   />
                 </td>
-                <td className="py-2 px-4">
+                <td className="py-2 px-4 truncate" style={{ width: widths.debts, maxWidth: widths.debts, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(e['Долги'] ?? e['debts'] ?? '')}>
                   <input 
                     className={`w-full bg-transparent text-red-600 font-medium border-b border-transparent outline-none py-0.5 text-xs md:text-sm ${
                       isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
@@ -441,7 +484,7 @@ function AmgSectionTable({
                     placeholder="Нет"
                   />
                 </td>
-                <td className="py-2 px-4 text-center">
+                <td className="py-2 px-4 text-center truncate" style={{ width: widths.monthsToTransfer, maxWidth: widths.monthsToTransfer, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(e['До перехода'] ?? e['monthsToTransfer'] ?? '')}>
                   <input 
                     className={`w-16 text-center bg-transparent border-b border-transparent outline-none font-semibold py-0.5 mx-auto block text-xs md:text-sm ${
                       isUnassigned ? 'hover:border-red-300 focus:border-red-500' : 'hover:border-gray-300 focus:border-blue-500'
@@ -450,7 +493,7 @@ function AmgSectionTable({
                     onChange={ev => onUpdateStudent(e.id, { 'До перехода': ev.target.value })} 
                   />
                 </td>
-                <td className="py-2 px-4">
+                <td className="py-2 px-4 truncate" style={{ width: widths.section, maxWidth: widths.section }}>
                   <select
                     value={e['Секция'] ?? e['section'] ?? ''}
                     onChange={ev => onUpdateStudent(e.id, { 'Секция': ev.target.value })}
@@ -466,7 +509,7 @@ function AmgSectionTable({
                     ))}
                   </select>
                 </td>
-                <td className="py-2 px-4 text-right">
+                <td className="py-2 px-4 text-right" style={{ width: 50 }}>
                   <button 
                     onClick={() => confirm("Удалить студента?") && onDeleteStudent(e.id, e)} 
                     className="text-gray-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none"
