@@ -4,6 +4,8 @@ import { Plus, Trash2, X, Filter } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
+import { auth } from '../firebase';
+import { useResizableColumns } from '../lib/useResizableColumns';
 
 export default function ActivitiesTab() {
   const [subTab, setSubTab] = useState('journal'); // journal, mentors, products

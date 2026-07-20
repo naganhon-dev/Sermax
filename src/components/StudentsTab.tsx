@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useCollection, updateRecord, createRecord, deleteRecord } from '../lib/useCollection';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { Search, Plus, Trash2, X, Filter } from 'lucide-react';
+import { Search, Plus, Trash2, X } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
+import { auth } from '../firebase';
+import { useResizableColumns } from '../lib/useResizableColumns';
 
 export default function StudentsTab({ targetStudent }: { targetStudent?: any }) {
   const [subTab, setSubTab] = useState('registry'); // registry, graduates, blacklist
@@ -45,12 +46,28 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
   const { handleSort, renderSortIcon, sortData } = useSort();
 
+  // Resize columns setup
+  const userEmail = auth?.currentUser?.email || 'guest';
+  const defaultWidths = {
+    fio: 200,
+    email: 180,
+    phone: 150,
+    packet: 120,
+    status: 120,
+    start: 100,
+    graduate: 100,
+    comment: 250,
+  };
+  const { widths, handleResizeStart, resetWidths } = useResizableColumns(
+    `students_width_${collectionName}`,
+    defaultWidths,
+    userEmail
+  );
+
   const filtered = useMemo(() => {
     return students.filter((s: any) => {
       // Program check
       if (program !== 'Все') {
-         // Assuming "ГП" / "Эволюция" can be derived. 
-         // Let's assume there is a "Программа" field or we check package
          const progMatch = s['Программа'] === program || (s['Пакет обучения'] || '').includes(program);
          if (!progMatch) return false;
       }
@@ -92,8 +109,6 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
     return counts;
   }, [filtered]);
 
-  // virtualization and table...
-  
   return (
     <div className="flex h-full">
        <div className="flex-1 flex flex-col min-w-0">
@@ -112,9 +127,14 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                    <input placeholder="Статус" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm w-32" />
                    <input placeholder="Пакет" value={packageFilter} onChange={e => setPackageFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm w-32" />
                 </div>
-                <button onClick={() => setSelectedStudent({ _isNew: true })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700">
-                  <Plus className="w-4 h-4" /> Добавить
-                </button>
+                <div className="flex gap-2">
+                   <button onClick={resetWidths} className="text-gray-500 hover:text-gray-700 text-xs px-2.5 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors" title="Сбросить ширину колонок">
+                     Сбросить ширину
+                   </button>
+                   <button onClick={() => setSelectedStudent({ _isNew: true })} className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm flex items-center gap-1 hover:bg-blue-700">
+                     <Plus className="w-4 h-4" /> Добавить
+                   </button>
+                </div>
              </div>
              <div className="flex gap-4 text-sm text-gray-600 overflow-x-auto pb-1">
                 {Object.entries(statuses).map(([k, v]) => (
@@ -123,58 +143,82 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
              </div>
           </div>
           
-          <div className="flex-1 overflow-auto p-4">
-             <table className="w-full text-left border-collapse text-sm">
+          <div className="flex-1 overflow-auto p-4 relative">
+             <table className="text-left border-collapse text-sm" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
                <thead>
                  <tr className="border-b-2 border-gray-200">
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('ФИО')}>ФИО{renderSortIcon('ФИО')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Почта')}>Почта{renderSortIcon('Почта')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Телефон')}>Телефон{renderSortIcon('Телефон')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Пакет обучения')}>Пакет{renderSortIcon('Пакет обучения')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Статус')}>Статус{renderSortIcon('Статус')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата старта')}>Старт{renderSortIcon('Дата старта')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Дата выпуска')}>Выпуск{renderSortIcon('Дата выпуска')}</th>
-                   <th className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none" onClick={() => handleSort('Комментарий')}>Комментарий{renderSortIcon('Комментарий')}</th>
+                   <th style={{ width: widths.fio, minWidth: widths.fio, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('ФИО')} className="w-full h-full pr-4">{renderSortIcon('ФИО')}ФИО</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'fio')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.email, minWidth: widths.email, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Почта')} className="w-full h-full pr-4">{renderSortIcon('Почта')}Почта</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'email')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.phone, minWidth: widths.phone, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Телефон')} className="w-full h-full pr-4">{renderSortIcon('Телефон')}Телефон</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'phone')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.packet, minWidth: widths.packet, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Пакет обучения')} className="w-full h-full pr-4">{renderSortIcon('Пакет обучения')}Пакет</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'packet')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.status, minWidth: widths.status, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Статус')} className="w-full h-full pr-4">{renderSortIcon('Статус')}Статус</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'status')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.start, minWidth: widths.start, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Дата старта')} className="w-full h-full pr-4">{renderSortIcon('Дата старта')}Старт</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'start')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.graduate, minWidth: widths.graduate, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Дата выпуска')} className="w-full h-full pr-4">{renderSortIcon('Дата выпуска')}Выпуск</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'graduate')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
+                   <th style={{ width: widths.comment, minWidth: widths.comment, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
+                     <div onClick={() => handleSort('Комментарий')} className="w-full h-full pr-4">{renderSortIcon('Комментарий')}Комментарий</div>
+                     <div onMouseDown={e => handleResizeStart(e, 'comment')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
+                   </th>
                  </tr>
                </thead>
                <tbody>
                  {paginatedData.map((s: any) => (
                    <tr key={s.id} onClick={() => setSelectedStudent(s)} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer">
-                     <td className="py-1 px-2 relative">
+                     <td className="py-1.5 px-2 relative truncate animate-fade-in" style={{ width: widths.fio, maxWidth: widths.fio, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['ФИО']}>
                         {s._color && <div className="absolute left-0 top-0 bottom-0 w-1" style={{backgroundColor: s._color}} />}
                         {s['ФИО']}
                      </td>
-                     <td className="py-1 px-2 text-gray-500">{s['Почта']}</td>
-                     <td className="py-1 px-2 text-gray-500">{s['Телефон']}</td>
-                     <td className="py-1 px-2">{s['Пакет обучения']}</td>
-                     <td className="py-1 px-2">
+                     <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.email, maxWidth: widths.email, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Почта']}>{s['Почта']}</td>
+                     <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.phone, maxWidth: widths.phone, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Телефон']}>{s['Телефон']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.packet, maxWidth: widths.packet, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Пакет обучения']}>{s['Пакет обучения']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.status, maxWidth: widths.status, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Статус']}>
                         <StatusBadge status={s['Статус']} />
                      </td>
-                     <td className="py-1 px-2">{s['Дата старта']}</td>
-                     <td className="py-1 px-2">{s['Дата выпуска']}</td>
-                     <td className="py-1 px-2 text-gray-500 truncate max-w-[150px]">{s['Комментарий']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.start, maxWidth: widths.start, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Дата старта']}>{s['Дата старта']}</td>
+                     <td className="py-1.5 px-2 truncate" style={{ width: widths.graduate, maxWidth: widths.graduate, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Дата выпуска']}>{s['Дата выпуска']}</td>
+                     <td className="py-1.5 px-2 text-gray-500 truncate" style={{ width: widths.comment, maxWidth: widths.comment, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['Комментарий']}>{s['Комментарий']}</td>
                    </tr>
                  ))}
                </tbody>
              </table>
-           </div>
+          </div>
 
-           <Pagination
-             currentPage={currentPage}
-             setCurrentPage={setCurrentPage}
-             pageSize={pageSize}
-             setPageSize={setPageSize}
-             totalPages={totalPages}
-             startIndex={startIndex}
-             endIndex={endIndex}
-             totalItems={totalItems}
-             grandTotal={students.length}
-           />
-        </div>
+          <Pagination
+            currentPage={currentPage}
+            setCurrentPage={setCurrentPage}
+            pageSize={pageSize}
+            setPageSize={setPageSize}
+            totalPages={totalPages}
+            startIndex={startIndex}
+            endIndex={endIndex}
+            totalItems={totalItems}
+            grandTotal={students.length}
+          />
+       </div>
 
-       {selectedStudent && (
-         <StudentPanel student={selectedStudent} collectionName={collectionName} allRecords={students} onClose={() => setSelectedStudent(null)} />
-       )}
+      {selectedStudent && (
+        <StudentPanel student={selectedStudent} collectionName={collectionName} allRecords={students} onClose={() => setSelectedStudent(null)} />
+      )}
     </div>
   );
 }
@@ -265,7 +309,6 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     return <input className={className} value={val} onChange={e => setVal(e.target.value)} />;
   };
 
-  // grouping logic can be implemented manually
   const allKeys = Object.keys(data).filter(k => !k.startsWith('_') && k !== 'id');
 
   const questionnaireKeys = ["Анкета 2/3", "Отправки", "Звонки", "Результаты"];
@@ -386,5 +429,3 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     </div>
   );
 }
-
-// Removed empty views
