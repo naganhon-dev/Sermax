@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useCollection } from '../lib/useCollection';
-import { Users, Phone, Clock, FileText, Layers, Calendar, ChevronRight } from 'lucide-react';
+import { Users, Phone, Clock, FileText, Layers, Calendar, ChevronRight, Coins, ShieldAlert } from 'lucide-react';
 import { canonStatus } from '../lib/status';
 
 const MONTH_NAMES = [
@@ -12,6 +12,8 @@ export default function WorkloadTab() {
   const { data: students } = useCollection('students');
   const { data: calls } = useCollection('calls');
   const { data: activities } = useCollection('activities');
+  const { data: amgEntries } = useCollection('amg_entries');
+  const { data: amgMeta } = useCollection('amg_meta');
 
   const [selectedMentor, setSelectedMentor] = useState<string>('');
 
@@ -45,6 +47,74 @@ export default function WorkloadTab() {
 
   // Set default selected mentor to the first one in the list if empty
   const activeMentor = selectedMentor || mentorsList[0] || '';
+
+  const isAmgMentor = useMemo(() => {
+    if (!activeMentor) return false;
+    const name = activeMentor.trim().toLowerCase();
+    return name === 'герчик' || name === 'амг';
+  }, [activeMentor]);
+
+  // AMG statistics (only for mentor "Герчик" / "АМГ")
+  const amgStatsByMonth = useMemo(() => {
+    if (!isAmgMentor) return [];
+
+    const metaDoc = amgMeta.find((m: any) => m.id === 'slots') || amgMeta[0];
+    const slotsObj = metaDoc?.['слоты'] || metaDoc?.['slots'] || metaDoc?.['data'] || {};
+
+    return MONTH_NAMES.map((monthName) => {
+      const monthEntries = amgEntries.filter((e: any) => {
+        const m = e['Месяц'] || e.month;
+        return m === monthName;
+      });
+
+      const studentsCount = monthEntries.length;
+
+      const totalDebts = monthEntries.reduce((acc: number, curr: any) => {
+        const val = curr['Долги'] ?? curr['debts'] ?? '';
+        const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
+        return acc + parsed;
+      }, 0);
+
+      const monthSlots = slotsObj[monthName] || {};
+      const plan = monthSlots['Планово'] !== undefined ? monthSlots['Планово'] : (monthSlots['plan'] !== undefined ? monthSlots['plan'] : '—');
+      const debts = monthSlots['С долгами'] !== undefined ? monthSlots['С долгами'] : (monthSlots['debts'] !== undefined ? monthSlots['debts'] : '—');
+
+      return {
+        monthName,
+        studentsCount,
+        totalDebts,
+        plan,
+        debts,
+      };
+    });
+  }, [amgEntries, amgMeta, isAmgMentor]);
+
+  const amgSummary = useMemo(() => {
+    if (!isAmgMentor) return null;
+
+    const totalDebts = amgEntries.reduce((acc: number, curr: any) => {
+      const val = curr['Долги'] ?? curr['debts'] ?? '';
+      const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
+      return acc + parsed;
+    }, 0);
+
+    const totalStudentsCount = amgEntries.length;
+
+    const currentMonthName = MONTH_NAMES[new Date().getMonth()];
+    const metaDoc = amgMeta.find((m: any) => m.id === 'slots') || amgMeta[0];
+    const slotsObj = metaDoc?.['слоты'] || metaDoc?.['slots'] || metaDoc?.['data'] || {};
+    const monthSlots = slotsObj[currentMonthName] || {};
+    const plan = monthSlots['Планово'] !== undefined ? monthSlots['Планово'] : (monthSlots['plan'] !== undefined ? monthSlots['plan'] : '—');
+    const debts = monthSlots['С долгами'] !== undefined ? monthSlots['С долгами'] : (monthSlots['debts'] !== undefined ? monthSlots['debts'] : '—');
+
+    return {
+      totalDebts,
+      totalStudentsCount,
+      currentMonthName,
+      plan,
+      debts,
+    };
+  }, [amgEntries, amgMeta, isAmgMentor]);
 
   // 2. Metrics Calculations
   const activeStudentsCount = useMemo(() => {
@@ -300,6 +370,112 @@ export default function WorkloadTab() {
                 </div>
               </div>
             </div>
+
+            {/* AMG Block (only for "Герчик" / "АМГ") */}
+            {isAmgMentor && amgSummary && (
+              <div id="amg-block" className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col p-6 space-y-6">
+                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                      <Layers className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-800 text-base">Показатели АМГ</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Сводная информация из коллекций amg_entries и amg_meta</p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-xs font-bold uppercase tracking-wider">
+                    Эксклюзивные данные АМГ
+                  </span>
+                </div>
+
+                {/* Summary Metrics */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500 shrink-0">
+                      <Coins className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Общий долг АМГ (всего)</p>
+                      <p className="text-lg font-bold text-slate-800 mt-0.5">
+                        {amgSummary.totalDebts.toLocaleString('ru-RU')} ₽
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 shrink-0">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Всего записей студентов</p>
+                      <p className="text-lg font-bold text-slate-800 mt-0.5">{amgSummary.totalStudentsCount}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 shrink-0">
+                      <Calendar className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Слоты ({amgSummary.currentMonthName})</p>
+                      <p className="text-sm font-bold text-slate-800 mt-0.5">
+                        Планово: <span className="text-slate-900 font-extrabold">{amgSummary.plan}</span> | С долгами: <span className="text-red-600 font-extrabold">{amgSummary.debts}</span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Monthly breakdown table */}
+                <div className="border border-slate-100 rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
+                    <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">Детализация АМГ по месяцам</h4>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-xs md:text-sm">
+                      <thead className="bg-slate-50/50 text-slate-500 uppercase tracking-wider font-semibold text-[10px] border-b border-slate-100">
+                        <tr>
+                          <th className="py-2 px-4 text-slate-600 font-semibold">Месяц</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Студентов</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Сумма долгов</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: Планово</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: С долгами</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {amgStatsByMonth.map((stat) => {
+                          const isCurrent = stat.monthName === amgSummary.currentMonthName;
+                          return (
+                            <tr key={stat.monthName} className={`hover:bg-slate-50/50 transition-colors ${isCurrent ? 'bg-indigo-50/20 font-medium' : ''}`}>
+                              <td className="py-2 px-4 text-slate-700 flex items-center gap-1.5">
+                                {stat.monthName}
+                                {isCurrent && (
+                                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 text-[9px] font-bold rounded">
+                                    Текущий
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-4 text-center text-slate-800 font-semibold">
+                                {stat.studentsCount > 0 ? stat.studentsCount : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="py-2 px-4 text-center text-slate-800 font-semibold">
+                                {stat.totalDebts > 0 ? `${stat.totalDebts.toLocaleString('ru-RU')} ₽` : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="py-2 px-4 text-center text-slate-800 font-semibold">
+                                {stat.plan !== '—' && stat.plan !== '' ? stat.plan : <span className="text-slate-300">—</span>}
+                              </td>
+                              <td className="py-2 px-4 text-center text-red-600 font-semibold">
+                                {stat.debts !== '—' && stat.debts !== '' ? stat.debts : <span className="text-slate-300">—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Monthly Analytics & Programs Split */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

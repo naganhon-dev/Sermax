@@ -1,22 +1,19 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import firebaseConfigJson from '../firebase-applet-config.json';
 
-// Вставьте значения из консоли Firebase
-export const firebaseConfig = {
-  apiKey: "AIzaSyBbsTT0pEz0QakLtfJRBxR6R-rPdPwYN3g",
-  authDomain: "work-dashboardsermax.firebaseapp.com",
-  projectId: "work-dashboardsermax",
-  storageBucket: "work-dashboardsermax.firebasestorage.app",
-  messagingSenderId: "308601780307",
-  appId: "1:308601780307:web:e894db040c02e3dca52ea6"
-};
+export const firebaseConfig = firebaseConfigJson;
 
-export const isFirebaseConfigured = firebaseConfig.apiKey !== "";
+export const isFirebaseConfigured = !!firebaseConfig && firebaseConfig.apiKey !== "";
 
 export const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = isFirebaseConfigured ? getAuth(app!) : null as any;
-export const db = isFirebaseConfigured ? getFirestore(app!) : null as any;
+export const db = isFirebaseConfigured 
+  ? ((firebaseConfig as any).firestoreDatabaseId 
+      ? getFirestore(app!, (firebaseConfig as any).firestoreDatabaseId) 
+      : getFirestore(app!))
+  : null as any;
 
 export const loginWithGoogle = async () => {
   if (!auth) return;
