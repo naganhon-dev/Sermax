@@ -282,7 +282,36 @@ function EventPanel({ event, allRecords, onClose }: { event: any, allRecords: an
     return <input className={className} value={val} onChange={e => setVal(e.target.value)} />;
   };
 
-  const fields = ['Дата', 'Время', 'Тема', 'Группы клиентов', 'Ссылка для студентов', 'Ссылка на трансляцию', 'Пароль', 'Ведущий', 'Дата отправки письма'];
+  const fields = ['Тема', 'Группы клиентов', 'Ссылка для студентов', 'Ссылка на трансляцию', 'Пароль', 'Ведущий', 'Дата отправки письма'];
+
+  const getDatetimeLocalValue = (dateVal: string, timeVal: string) => {
+    if (!dateVal) return '';
+    const yyyymmdd = toDateInput(dateVal);
+    if (!yyyymmdd) return '';
+    const time = timeVal ? timeVal.trim() : '00:00';
+    const timeParts = time.split(':');
+    const hh = (timeParts[0] || '00').padStart(2, '0');
+    const mm = (timeParts[1] || '00').padStart(2, '0');
+    return `${yyyymmdd}T${hh}:${mm}`;
+  };
+
+  const handleDatetimeChange = (val: string) => {
+    if (!val) {
+      setData({
+        ...data,
+        'Дата': '',
+        'Время': ''
+      });
+      return;
+    }
+    const [datePart, timePart] = val.split('T');
+    const ddmmyyyy = fromDateInput(datePart);
+    setData({
+      ...data,
+      'Дата': ddmmyyyy,
+      'Время': timePart || ''
+    });
+  };
 
   return (
     <div className="w-96 border-l border-gray-200 bg-white shadow-xl flex flex-col z-10 absolute right-0 top-0 bottom-0">
@@ -291,6 +320,15 @@ function EventPanel({ event, allRecords, onClose }: { event: any, allRecords: an
         <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded"><X className="w-5 h-5"/></button>
       </div>
       <div className="flex-1 overflow-auto p-4 flex flex-col gap-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Дата и время</label>
+          <input
+            type="datetime-local"
+            className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+            value={getDatetimeLocalValue(data['Дата'], data['Время'])}
+            onChange={e => handleDatetimeChange(e.target.value)}
+          />
+        </div>
         {fields.map(k => (
           <div key={k}>
             <label className="block text-xs font-medium text-gray-500 mb-1">{k}</label>

@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Allow any authenticated user full access to all application collections
+    match /students/{studentId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /activities/{activityId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /os_reviews/{reviewId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /webinar_events/{eventId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /webinar_themes/{themeId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /calls/{callId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /archive/{archiveId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /amg_entries/{entryId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /amg_meta/{metaId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /call_scores/{scoreId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /trash/{trashId} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}
