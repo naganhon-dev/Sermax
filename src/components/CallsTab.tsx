@@ -78,6 +78,7 @@ export default function CallsTab() {
 
   const [activeType, setActiveType] = useState<string | null>(null);
   const [showSummary, setShowSummary] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ student: any; month: number } | null>(null);
 
@@ -128,6 +129,24 @@ export default function CallsTab() {
       calls: any[] 
     }>();
     
+    // 1. Populate all students from students collection first
+    students.forEach((s: any) => {
+      const fio = toText(s['ФИО']).trim();
+      const email = toText(s['Почта']).trim().toLowerCase();
+      if (!fio && !email) return;
+      const key = `${email || 'no-email'}::${fio || 'no-fio'}`;
+      if (!studentMap.has(key)) {
+        studentMap.set(key, {
+          ФИО: fio || 'Не указано',
+          Почта: email,
+          Группа: toText(s['Группа'] || s['группа']),
+          Секция: toText(s['Секция'] || s['секция']),
+          calls: []
+        });
+      }
+    });
+
+    // 2. Attach calls for active category
     calls.forEach(c => {
       const cType = toText(c.Тип).trim() || 'Не указан';
       if (cType !== currentType) return;
@@ -142,8 +161,8 @@ export default function CallsTab() {
         studentMap.set(key, {
           ФИО: fio || 'Не указано',
           Почта: email,
-          Группа: toText(c.Группа),
-          Секция: toText(c.Секция),
+          Группа: toText(c.Группа || c.группа),
+          Секция: toText(c.Секция || c.секция),
           calls: []
         });
       }
@@ -156,32 +175,48 @@ export default function CallsTab() {
     });
     
     return Array.from(studentMap.values());
-  }, [calls, currentType]);
+  }, [students, calls, currentType]);
 
-  // Filter students by search term
+  // Filter students by search term and zero calls (if showAll is false)
   const filteredStudents = useMemo(() => {
-    if (!search) return studentsInType;
-    const q = search.toLowerCase();
-    return studentsInType.filter(st => 
-      st.ФИО.toLowerCase().includes(q) || 
-      st.Почта.toLowerCase().includes(q) ||
-      st.Группа.toLowerCase().includes(q) ||
-      st.Секция.toLowerCase().includes(q)
-    );
-  }, [studentsInType, search]);
+    let list = studentsInType;
 
-  // Group visible students by 'Группа/Секция'
+    if (!showAll) {
+      list = list.filter(st => st.calls.length > 0);
+    }
+
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(st => 
+        st.ФИО.toLowerCase().includes(q) || 
+        st.Почта.toLowerCase().includes(q) ||
+        st.Группа.toLowerCase().includes(q) ||
+        st.Секция.toLowerCase().includes(q)
+      );
+    }
+
+    return list;
+  }, [studentsInType, showAll, search]);
+
+  // Group visible students by 'Группа' (or 'Секция' if empty) and sort by ФИО within group
   const groupedStudents = useMemo(() => {
     const groups: Record<string, typeof filteredStudents> = {};
     filteredStudents.forEach(st => {
-      const gr = st.Секция || st.Группа || 'Без группы/секции';
+      const gr = (st.Группа || st.Секция || 'Без группы').trim() || 'Без группы';
       if (!groups[gr]) groups[gr] = [];
       groups[gr].push(st);
     });
+
+    Object.keys(groups).forEach(grKey => {
+      groups[grKey].sort((a, b) => a.ФИО.localeCompare(b.ФИО, 'ru'));
+    });
+
     return groups;
   }, [filteredStudents]);
 
-  const groupKeys = useMemo(() => Object.keys(groupedStudents).sort(), [groupedStudents]);
+  const groupKeys = useMemo(() => {
+    return Object.keys(groupedStudents).sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [groupedStudents]);
 
   // Visible calls based on the filtered list of students
   const visibleCalls = useMemo(() => {
@@ -270,11 +305,21 @@ export default function CallsTab() {
           <div>
             <h2 className="text-xl font-bold text-gray-800">{currentType}</h2>
             <p className="text-xs text-gray-500 mt-1">
-              Всего студентов: {filteredStudents.length} · Всего созвонов: {visibleCalls.length}
+              показано {filteredStudents.length} студентов · Всего созвонов: {visibleCalls.length}
             </p>
           </div>
           
-          <div className="flex items-center gap-3 w-full md:w-auto">
+          <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input 
+                type="checkbox" 
+                checked={showAll} 
+                onChange={e => setShowAll(e.target.checked)} 
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+              />
+              <span>Показать всех (включая без созвонов)</span>
+            </label>
+
             <div className="relative w-64">
               <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-gray-400">
                 <Search className="w-4 h-4" />
@@ -385,7 +430,7 @@ export default function CallsTab() {
                           {/* Visual Section Group Title Row */}
                           <tr className="bg-slate-100/80 border-y border-gray-200">
                             <td colSpan={14} className="py-1.5 px-4 font-bold text-xs text-slate-700 uppercase tracking-wider">
-                              Группа / Секция: {groupName} ({groupStudents.length})
+                              Группа: {groupName} ({groupStudents.length})
                             </td>
                           </tr>
                           

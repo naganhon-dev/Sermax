@@ -6,7 +6,7 @@ import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
 import { auth } from '../firebase';
 import { useResizableColumns } from '../lib/useResizableColumns';
-import { canonStatus, STANDARD_STATUSES } from '../lib/status';
+import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../lib/status';
 
 export default function StudentsTab({ targetStudent }: { targetStudent?: any }) {
   const [subTab, setSubTab] = useState('registry'); // registry, graduates, blacklist
@@ -282,9 +282,24 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const uniquePackages = Array.from(new Set(allRecords.map(r => r['Пакет обучения']).filter(Boolean)));
-  const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор']).filter(Boolean)));
+  const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор'] || r['ментор']).filter(Boolean)));
   const uniqueGroups = Array.from(new Set(allRecords.map(r => r['Группа']).filter(Boolean)));
   const uniqueMarkets = Array.from(new Set(allRecords.map(r => r['Рынок']).filter(Boolean)));
+
+  const mentorOptions = useMemo(() => {
+    const dbMentors = allRecords
+      .map(r => r['ментор'] || r['Ментор'] || r['mentor'])
+      .filter(Boolean)
+      .map(m => canonMentor(m));
+
+    return Array.from(
+      new Set(
+        [...ACTIVE_MENTORS, ...dbMentors]
+          .map(m => canonMentor(m))
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [allRecords]);
 
   const renderInput = (k: string, isMain = false) => {
     const val = data[k] || '';
@@ -343,6 +358,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
 
   const excludedKeys = [
     'ФИО', 'Почта', 'Телефон', 'Статус', 'Пакет обучения', 'Комментарий', 'Рынок',
+    'ментор', 'Ментор', 'mentor',
     'Анкета 2/3', 'Отправки', 'Звонки', 'Результаты',
     'анкета 2/3', 'отправки', 'звонки', 'результаты',
     'Анкета 2', 'Анкета 3', 'анкета 2', 'анкета 3'
@@ -393,6 +409,28 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Пакет обучения</label>
           {renderInput('Пакет обучения', true)}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Ментор</label>
+          <input
+            list="student-mentor-datalist"
+            className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+            value={data['ментор'] ?? data['Ментор'] ?? ''}
+            onChange={e => {
+              const val = e.target.value;
+              const next = { ...data, 'ментор': val };
+              if ('Ментор' in next) {
+                delete next['Ментор'];
+              }
+              setData(next);
+            }}
+            placeholder="Выберите или введите ментора"
+          />
+          <datalist id="student-mentor-datalist">
+            {mentorOptions.map(m => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Рынок</label>
