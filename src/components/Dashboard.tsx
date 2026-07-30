@@ -10,6 +10,7 @@ import ScoresTab from './ScoresTab';
 import AmgTab from './AmgTab';
 import ArchiveTab from './ArchiveTab';
 import WorkloadTab from './WorkloadTab';
+import LogsTab from './LogsTab';
 import { exportAllData } from '../lib/export';
 
 export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
@@ -26,6 +27,7 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
     { id: 'workload', label: 'Нагрузка' },
     { id: 'amg', label: 'АМГ' },
     { id: 'archive', label: 'Архив' },
+    { id: 'logs', label: 'Логи' },
   ];
 
   const userInitials = user.email ? user.email.substring(0, 2).toUpperCase() : 'U';
@@ -97,13 +99,19 @@ export default function Dashboard({ user, onLogout }: { user: User, onLogout: ()
                }} />
              )}
              {activeTab === 'students' && <StudentsTab targetStudent={targetStudent} />}
-             {activeTab === 'calls' && <CallsTab />}
+             {activeTab === 'calls' && (
+               <CallsTab onSelectStudent={(s) => {
+                 setTargetStudent(s);
+                 setActiveTab('students');
+               }} />
+             )}
              {activeTab === 'scores' && <ScoresTab />}
              {activeTab === 'webinars' && <WebinarsTab />}
              {activeTab === 'activities' && <ActivitiesTab />}
              {activeTab === 'workload' && <WorkloadTab />}
              {activeTab === 'amg' && <AmgTab />}
              {activeTab === 'archive' && <ArchiveTab />}
+             {activeTab === 'logs' && <LogsTab />}
           </div>
         )}
       </main>

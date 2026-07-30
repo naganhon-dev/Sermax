@@ -2,11 +2,11 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const COLLECTIONS = [
-  'students', 'graduates', 'blacklist', 
+  'students', 'graduates', 'blacklist', 'leads',
   'webinar_events', 'webinar_themes', 
   'activities', 'calls', 'call_categories', 
   'call_scores', 'os_reviews', 
-  'amg_entries', 'amg_meta', 'archive'
+  'amg_entries', 'amg_meta', 'archive', 'logs'
 ];
 
 export async function exportAllData() {
