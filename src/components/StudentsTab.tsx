@@ -11,8 +11,67 @@ import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../
 const isDateField = (k: string) => {
   if (!k) return false;
   const lower = k.toLowerCase();
-  return lower.includes('дата') || lower.includes('старт') || lower.includes('выпуск') || lower === 'др' || lower.includes('date');
+  return lower.includes('дата') || lower.includes('старт') || lower.includes('выпуск') || lower.includes('покупк') || lower === 'др' || lower.includes('date');
 };
+
+export function normalizeToIsoDate(val: any): string {
+  if (!val) return '';
+  try {
+    const str = String(val).trim();
+    if (!str) return '';
+
+    // If YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      return str;
+    }
+
+    // If ISO timestamp like YYYY-MM-DDTHH:mm:ss
+    if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+      return str.split('T')[0];
+    }
+
+    // If DD.MM.YYYY or D.M.YYYY
+    if (/^\d{1,2}\.\d{1,2}\.\d{4}/.test(str)) {
+      const parts = str.split('.');
+      if (parts.length >= 3) {
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2].substring(0, 4);
+        const d = parseInt(day, 10);
+        const m = parseInt(month, 10);
+        const y = parseInt(year, 10);
+        if (y >= 1900 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+          return `${year}-${month}-${day}`;
+        }
+      }
+    }
+
+    // Fallback: Date constructor
+    const parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+      const dd = String(parsed.getDate()).padStart(2, '0');
+      if (yyyy >= 1900 && yyyy <= 2100) {
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+  } catch (e) {
+    console.warn("Error normalizing date:", e);
+  }
+  return '';
+}
+
+export function sanitizeStudentDates(record: any): any {
+  if (!record || typeof record !== 'object') return record;
+  const copy = { ...record };
+  for (const k of Object.keys(copy)) {
+    if (isDateField(k) && copy[k]) {
+      copy[k] = normalizeToIsoDate(copy[k]);
+    }
+  }
+  return copy;
+}
 
 function parseToComparableDate(val: any): Date | null {
   if (!val) return null;
@@ -631,17 +690,6 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{status}</span>;
 }
 
-const toDateInput = (d: string) => {
-  if (!d) return '';
-  if (d.includes('.')) return d.split('.').reverse().join('-');
-  return d;
-};
-const fromDateInput = (d: string) => {
-  if (!d) return '';
-  if (d.includes('-')) return d.split('-').reverse().join('.');
-  return d;
-};
-
 function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
   const isNew = student._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
@@ -653,14 +701,15 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   const [flowForm, setFlowForm] = useState({
     old: '',
     new: '',
-    date: new Date().toISOString().split('T')[0],
+    date: normalizeToIsoDate(new Date().toISOString().split('T')[0]),
     reason: ''
   });
   const [flowError, setFlowError] = useState('');
 
   const executeSave = (recordToSave: any) => {
+    const sanitizedRecord = sanitizeStudentDates(recordToSave);
     if (isNew) {
-      createRecord(collectionName, recordToSave);
+      createRecord(collectionName, sanitizedRecord);
     } else {
       const formatValue = (val: any) => {
         if (val === undefined || val === null || val === '') return '';
@@ -679,14 +728,14 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
         return String(val);
       };
 
-      const allKeys = Array.from(new Set([...Object.keys(student || {}), ...Object.keys(recordToSave || {})]));
+      const allKeys = Array.from(new Set([...Object.keys(student || {}), ...Object.keys(sanitizedRecord || {})]));
       const changes: { field: string; oldValue: string; newValue: string }[] = [];
 
       for (const key of allKeys) {
         if (key === 'id' || key === '_isNew') continue;
 
         const oldVal = student ? student[key] : undefined;
-        const newVal = recordToSave ? recordToSave[key] : undefined;
+        const newVal = sanitizedRecord ? sanitizedRecord[key] : undefined;
 
         const oldStr = formatValue(oldVal);
         const newStr = formatValue(newVal);
@@ -701,27 +750,27 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       }
 
       if (changes.length > 0) {
-        const studentFio = recordToSave['ФИО'] || recordToSave['fio'] || (student && (student['ФИО'] || student['fio'])) || 'Без ФИО';
+        const studentFio = sanitizedRecord['ФИО'] || sanitizedRecord['fio'] || (student && (student['ФИО'] || student['fio'])) || 'Без ФИО';
         createRecord('logs', {
           timestamp: new Date().toISOString(),
           author: auth.currentUser?.email || 'Неизвестный',
-          studentId: recordToSave.id,
+          studentId: sanitizedRecord.id,
           studentFio: String(studentFio).trim(),
           changes
         });
       }
 
-      updateRecord(collectionName, recordToSave.id, recordToSave);
+      updateRecord(collectionName, sanitizedRecord.id, sanitizedRecord);
     }
     onClose();
   };
 
   const save = () => {
-    const currentEvo = String(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '').trim();
-    const currentNast = String(data['Старт Наставничество'] ?? '').trim();
+    const currentEvo = normalizeToIsoDate(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '');
+    const currentNast = normalizeToIsoDate(data['Старт Наставничество'] ?? '');
 
-    const prevEvo = String(student['Старт Эво 2.0'] ?? student['Старт Эво'] ?? student['Дата старта'] ?? '').trim();
-    const prevNast = String(student['Старт Наставничество'] ?? '').trim();
+    const prevEvo = normalizeToIsoDate(student['Старт Эво 2.0'] ?? student['Старт Эво'] ?? student['Дата старта'] ?? '');
+    const prevNast = normalizeToIsoDate(student['Старт Наставничество'] ?? '');
 
     const evoChanged = currentEvo !== prevEvo;
     const nastChanged = currentNast !== prevNast;
@@ -742,7 +791,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       setFlowForm({
         old: oldParts.join(', '),
         new: newParts.join(', '),
-        date: new Date().toISOString().split('T')[0],
+        date: normalizeToIsoDate(new Date().toISOString().split('T')[0]),
         reason: ''
       });
       setFlowError('');
@@ -750,7 +799,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       return;
     }
 
-    executeSave(data);
+    executeSave(sanitizeStudentDates(data));
   };
 
   const confirmFlowChange = () => {
@@ -759,19 +808,21 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       return;
     }
 
+    const flowDateIso = normalizeToIsoDate(flowForm.date) || new Date().toISOString().split('T')[0];
+
     const changeRecord = {
       old: flowForm.old,
       new: flowForm.new,
-      date: fromDateInput(flowForm.date) || flowForm.date,
+      date: flowDateIso,
       reason: flowForm.reason.trim(),
       author: auth.currentUser?.email || 'Пользователь',
       timestamp: new Date().toISOString()
     };
 
-    const updatedData = {
+    const updatedData = sanitizeStudentDates({
       ...data,
       flow_changes: [...(data.flow_changes || []), changeRecord]
-    };
+    });
 
     setData(updatedData);
     setShowFlowModal(false);
@@ -817,7 +868,15 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     const className = isMain ? "w-full border border-gray-300 rounded px-2 py-1" : "w-full border border-gray-200 rounded px-2 py-1 text-sm bg-gray-50";
 
     if (isDateField(k)) {
-      return <input type="date" className={className} value={toDateInput(val)} onChange={e => setVal(fromDateInput(e.target.value))} />;
+      const safeIsoVal = normalizeToIsoDate(val);
+      return (
+        <input
+          type="date"
+          className={className}
+          value={safeIsoVal}
+          onChange={e => setVal(e.target.value ? normalizeToIsoDate(e.target.value) : '')}
+        />
+      );
     }
 
     if (k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа' || k === 'Рынок') {
@@ -992,8 +1051,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
               <input
                 type="date"
                 className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
-                value={toDateInput(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '')}
-                onChange={e => setData({ ...data, 'Старт Эво 2.0': fromDateInput(e.target.value) })}
+                value={normalizeToIsoDate(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '')}
+                onChange={e => setData({ ...data, 'Старт Эво 2.0': e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
               />
             </div>
             <div>
@@ -1001,8 +1060,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
               <input
                 type="date"
                 className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
-                value={toDateInput(data['Старт Наставничество'] || '')}
-                onChange={e => setData({ ...data, 'Старт Наставничество': fromDateInput(e.target.value) })}
+                value={normalizeToIsoDate(data['Старт Наставничество'] || '')}
+                onChange={e => setData({ ...data, 'Старт Наставничество': e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
               />
             </div>
           </div>
@@ -1191,8 +1250,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                 <input
                   type="date"
                   className="w-full border border-gray-300 rounded px-2.5 py-1.5 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={flowForm.date}
-                  onChange={(e) => setFlowForm({ ...flowForm, date: e.target.value })}
+                  value={normalizeToIsoDate(flowForm.date)}
+                  onChange={(e) => setFlowForm({ ...flowForm, date: e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
                 />
               </div>
 
