@@ -57,10 +57,12 @@ export default function CreateGroupEventModal({
   const availablePackages = useMemo(() => {
     const set = new Set<string>();
     students.forEach(s => {
-      const p = (s['Программа'] || s['Пакет'] || s['программа'] || s['пакет'] || '').trim();
+      const p = (s['Пакет обучения'] || s['Программа'] || s['Пакет'] || s['программа'] || s['пакет'] || '').trim();
       if (p) set.add(p);
     });
-    return Array.from(set).sort();
+    const arr = Array.from(set).sort();
+    console.log('[CreateGroupEventModal] availablePackages count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   const availableGroups = useMemo(() => {
@@ -69,7 +71,9 @@ export default function CreateGroupEventModal({
       const g = (s['Группа'] || s['группа'] || '').trim();
       if (g) set.add(g);
     });
-    return Array.from(set).sort();
+    const arr = Array.from(set).sort();
+    console.log('[CreateGroupEventModal] availableGroups count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   // Active learning students (status "Учится")
@@ -291,6 +295,7 @@ export default function CreateGroupEventModal({
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Ментор *</label>
               <input
+                type="text"
                 list="mentor-group-create-list"
                 required
                 placeholder="Выберите или введите ментора"
@@ -299,8 +304,8 @@ export default function CreateGroupEventModal({
                 className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
               />
               <datalist id="mentor-group-create-list">
-                {ACTIVE_MENTORS.map(m => (
-                  <option key={m} value={m} />
+                {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                  <option key={m} value={m}>{m}</option>
                 ))}
               </datalist>
             </div>
@@ -341,6 +346,7 @@ export default function CreateGroupEventModal({
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Пакет / Программа</label>
                 <input
+                  type="text"
                   list="create-group-package-filter"
                   placeholder="Все пакеты"
                   value={filterPackage}
@@ -349,7 +355,7 @@ export default function CreateGroupEventModal({
                 />
                 <datalist id="create-group-package-filter">
                   {availablePackages.map(p => (
-                    <option key={p} value={p} />
+                    <option key={p} value={p}>{p}</option>
                   ))}
                 </datalist>
               </div>
@@ -357,6 +363,7 @@ export default function CreateGroupEventModal({
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Группа / Поток</label>
                 <input
+                  type="text"
                   list="create-group-group-filter"
                   placeholder="Все группы"
                   value={filterGroup}
@@ -365,7 +372,7 @@ export default function CreateGroupEventModal({
                 />
                 <datalist id="create-group-group-filter">
                   {availableGroups.map(g => (
-                    <option key={g} value={g} />
+                    <option key={g} value={g}>{g}</option>
                   ))}
                 </datalist>
               </div>
@@ -373,6 +380,7 @@ export default function CreateGroupEventModal({
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Ментор группы</label>
                 <input
+                  type="text"
                   list="create-group-mentor-filter"
                   placeholder="Все менторы"
                   value={filterMentor}
@@ -380,8 +388,8 @@ export default function CreateGroupEventModal({
                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
                 />
                 <datalist id="create-group-mentor-filter">
-                  {ACTIVE_MENTORS.map(m => (
-                    <option key={m} value={m} />
+                  {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                    <option key={m} value={m}>{m}</option>
                   ))}
                 </datalist>
               </div>

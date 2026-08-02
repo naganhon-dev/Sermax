@@ -144,23 +144,27 @@ export default function GroupEventCardModal({
   };
 
   const uniquePackages = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         students
           .map(s => s['Пакет обучения'] || s['Пакет'] || s['программа'] || s['Программа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[GroupEventCardModal] uniquePackages count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   const uniqueGroups = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         students
           .map(s => s['Группа'] || s['группа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[GroupEventCardModal] uniqueGroups count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   const [manualFio, setManualFio] = useState('');
@@ -339,6 +343,7 @@ export default function GroupEventCardModal({
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-0.5">Группа</label>
                   <input
+                    type="text"
                     list="card-modal-group-list"
                     placeholder="Группа"
                     value={manualGroup}
@@ -347,13 +352,14 @@ export default function GroupEventCardModal({
                   />
                   <datalist id="card-modal-group-list">
                     {uniqueGroups.map(g => (
-                      <option key={g} value={g} />
+                      <option key={g} value={g}>{g}</option>
                     ))}
                   </datalist>
                 </div>
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-0.5">Пакет обучения</label>
                   <input
+                    type="text"
                     list="card-modal-package-list"
                     placeholder="Пакет"
                     value={manualPackage}
@@ -362,13 +368,14 @@ export default function GroupEventCardModal({
                   />
                   <datalist id="card-modal-package-list">
                     {uniquePackages.map(p => (
-                      <option key={p} value={p} />
+                      <option key={p} value={p}>{p}</option>
                     ))}
                   </datalist>
                 </div>
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-0.5">Ментор</label>
                   <input
+                    type="text"
                     list="card-modal-mentor-list"
                     placeholder="Ментор"
                     value={manualMentor}
@@ -376,8 +383,8 @@ export default function GroupEventCardModal({
                     className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
                   />
                   <datalist id="card-modal-mentor-list">
-                    {ACTIVE_MENTORS.map(m => (
-                      <option key={m} value={m} />
+                    {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </datalist>
                 </div>

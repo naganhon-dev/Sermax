@@ -216,23 +216,27 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
   const allMentorsList = ACTIVE_MENTORS;
 
   const uniquePackages = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         (students || [])
           .map((s: any) => s['Пакет обучения'] || s['Пакет'] || s['программа'] || s['Программа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[CallsTab] uniquePackages count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   const uniqueGroups = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         (students || [])
           .map((s: any) => s['Группа'] || s['группа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[CallsTab] uniqueGroups count:', arr.length, arr);
+    return arr;
   }, [students]);
 
   // Aggregated Leads for "Созвоны для дожатия"
@@ -1459,6 +1463,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Ментор</label>
                   <input
+                    type="text"
                     list="mentor-lead-list"
                     placeholder="Выберите или введите"
                     value={leadForm.mentor}
@@ -1466,8 +1471,8 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                     className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                   />
                   <datalist id="mentor-lead-list">
-                    {allMentorsList.map(m => (
-                      <option key={m} value={m} />
+                    {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </datalist>
                 </div>
@@ -1547,6 +1552,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Ментор</label>
                 <input
+                  type="text"
                   list="mentor-lead-call-list"
                   placeholder={selectedLeadForCall.Ментор || "Выберите ментора"}
                   value={addCallForm.mentor}
@@ -1554,8 +1560,8 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                   className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none"
                 />
                 <datalist id="mentor-lead-call-list">
-                  {allMentorsList.map(m => (
-                    <option key={m} value={m} />
+                  {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                    <option key={m} value={m}>{m}</option>
                   ))}
                 </datalist>
               </div>
@@ -1768,6 +1774,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Программа</label>
                   <input
+                    type="text"
                     list="edit-student-program-list"
                     className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Программа || ''}
@@ -1776,13 +1783,14 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                   />
                   <datalist id="edit-student-program-list">
                     {uniquePackages.map(p => (
-                      <option key={p} value={p} />
+                      <option key={p} value={p}>{p}</option>
                     ))}
                   </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Ментор</label>
                   <input
+                    type="text"
                     list="edit-student-mentor-list"
                     className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Ментор || ''}
@@ -1790,8 +1798,8 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                     placeholder="Выберите или введите ментора"
                   />
                   <datalist id="edit-student-mentor-list">
-                    {ACTIVE_MENTORS.map(m => (
-                      <option key={m} value={m} />
+                    {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </datalist>
                 </div>
@@ -1814,6 +1822,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Группа</label>
                   <input
+                    type="text"
                     list="edit-student-group-list"
                     className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Группа || ''}
@@ -1822,7 +1831,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                   />
                   <datalist id="edit-student-group-list">
                     {uniqueGroups.map(g => (
-                      <option key={g} value={g} />
+                      <option key={g} value={g}>{g}</option>
                     ))}
                   </datalist>
                 </div>
@@ -2095,6 +2104,7 @@ function CellPopover({ student, month, currentType, calls, onClose, onOpenUncoun
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Ментор *</label>
               <input 
+                type="text"
                 list="popover-mentors"
                 placeholder="Имя ментора"
                 value={newMentor}
@@ -2103,8 +2113,8 @@ function CellPopover({ student, month, currentType, calls, onClose, onOpenUncoun
                 required
               />
               <datalist id="popover-mentors">
-                {allMentors.map(m => (
-                  <option key={m} value={m} />
+                {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                  <option key={m} value={m}>{m}</option>
                 ))}
               </datalist>
             </div>

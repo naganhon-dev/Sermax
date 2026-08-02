@@ -851,23 +851,27 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const uniquePackages = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         allRecords
           .map(r => r['Пакет обучения'] || r['Пакет'] || r['программа'] || r['Программа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[StudentsTab] uniquePackages count:', arr.length, arr);
+    return arr;
   }, [allRecords]);
 
   const uniqueGroups = useMemo(() => {
-    return Array.from(
+    const arr = Array.from(
       new Set(
         allRecords
           .map(r => r['Группа'] || r['группа'])
           .filter(Boolean)
       )
     ).sort();
+    console.log('[StudentsTab] uniqueGroups count:', arr.length, arr);
+    return arr;
   }, [allRecords]);
 
   const uniqueMarkets = useMemo(() => {
@@ -876,7 +880,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     ).sort();
   }, [allRecords]);
 
-  const mentorOptions = ACTIVE_MENTORS;
+  const mentorOptions = ["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"];
 
   const renderInput = (k: string, isMain = false) => {
     const val = data[k] || '';
@@ -904,9 +908,9 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
       const listId = `list-${k.replace(/\s+/g, '-')}`;
       return (
         <>
-          <input list={listId} className={className} value={val} onChange={e => setVal(e.target.value)} />
+          <input type="text" list={listId} className={className} value={val} onChange={e => setVal(e.target.value)} />
           <datalist id={listId}>
-            {options.map(o => <option key={o} value={o} />)}
+            {options.map(o => <option key={o} value={o}>{o}</option>)}
           </datalist>
         </>
       );
@@ -1000,6 +1004,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Пакет обучения</label>
             <input
+              type="text"
               list="student-packet-datalist"
               className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
               value={data['Пакет обучения'] || ''}
@@ -1008,13 +1013,14 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
             />
             <datalist id="student-packet-datalist">
               {uniquePackages.map(p => (
-                <option key={p} value={p} />
+                <option key={p} value={p}>{p}</option>
               ))}
             </datalist>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Группа</label>
             <input
+              type="text"
               list="student-group-datalist"
               className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
               value={data['Группа'] ?? data['группа'] ?? ''}
@@ -1030,13 +1036,14 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
             />
             <datalist id="student-group-datalist">
               {uniqueGroups.map(g => (
-                <option key={g} value={g} />
+                <option key={g} value={g}>{g}</option>
               ))}
             </datalist>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Ментор</label>
             <input
+              type="text"
               list="student-mentor-datalist"
               className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
               value={data['ментор'] ?? data['Ментор'] ?? ''}
@@ -1051,8 +1058,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
               placeholder="Выберите или введите ментора"
             />
             <datalist id="student-mentor-datalist">
-              {mentorOptions.map(m => (
-                <option key={m} value={m} />
+              {["Герчик","Носков","Степченко","Кирш","Щеглов","Чорный","Кравченко"].map(m => (
+                <option key={m} value={m}>{m}</option>
               ))}
             </datalist>
           </div>
