@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, FormEvent } from 'react';
 import { updateRecord } from '../lib/useCollection';
 import { X, Check, X as IconX, AlertTriangle, Users, Plus, Search, Trash2 } from 'lucide-react';
 import { canonStatus } from '../lib/status';
@@ -143,6 +143,64 @@ export default function GroupEventCardModal({
     }
   };
 
+  const uniquePackages = useMemo(() => {
+    return Array.from(
+      new Set(
+        students
+          .map(s => s['Пакет обучения'] || s['Пакет'] || s['программа'] || s['Программа'])
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [students]);
+
+  const uniqueGroups = useMemo(() => {
+    return Array.from(
+      new Set(
+        students
+          .map(s => s['Группа'] || s['группа'])
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [students]);
+
+  const [manualFio, setManualFio] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualGroup, setManualGroup] = useState('');
+  const [manualPackage, setManualPackage] = useState('');
+  const [manualMentor, setManualMentor] = useState('');
+
+  const handleAddManualParticipant = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!manualFio.trim()) return;
+
+    const email = manualEmail.trim().toLowerCase();
+    const fio = manualFio.trim();
+
+    const newP: GroupParticipant = {
+      email,
+      fio,
+      present: null,
+      initial_group: manualGroup.trim(),
+      initial_package: manualPackage.trim(),
+      initial_mentor: canonMentor(manualMentor.trim())
+    };
+
+    const updated = [...participants, newP];
+    setParticipants(updated);
+    setManualFio('');
+    setManualEmail('');
+    setManualGroup('');
+    setManualPackage('');
+    setManualMentor('');
+    setIsAddingStudent(false);
+
+    if (groupCall?.id) {
+      await updateRecord('calls', groupCall.id, {
+        participants: updated
+      });
+    }
+  };
+
   const searchedStudents = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
@@ -223,12 +281,12 @@ export default function GroupEventCardModal({
 
         {/* Manual Addition Area */}
         {isAddingStudent && (
-          <div className="p-3 bg-gray-50 border-b border-gray-200 shrink-0">
+          <div className="p-3 bg-gray-50 border-b border-gray-200 shrink-0 space-y-3">
             <div className="relative max-w-md">
               <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-2.5" />
               <input
                 type="text"
-                placeholder="Поиск студента по ФИО, почте или группе..."
+                placeholder="Поиск студента из базы по ФИО, почте или группе..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white"
@@ -253,6 +311,86 @@ export default function GroupEventCardModal({
                 ))}
               </div>
             )}
+
+            <form onSubmit={handleAddManualParticipant} className="pt-2 border-t border-gray-200 space-y-2">
+              <div className="text-xs font-semibold text-gray-700">Или добавьте участника вручную:</div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">ФИО *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ФИО студента"
+                    value={manualFio}
+                    onChange={e => setManualFio(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Почта</label>
+                  <input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={manualEmail}
+                    onChange={e => setManualEmail(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Группа</label>
+                  <input
+                    list="card-modal-group-list"
+                    placeholder="Группа"
+                    value={manualGroup}
+                    onChange={e => setManualGroup(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
+                  />
+                  <datalist id="card-modal-group-list">
+                    {uniqueGroups.map(g => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Пакет обучения</label>
+                  <input
+                    list="card-modal-package-list"
+                    placeholder="Пакет"
+                    value={manualPackage}
+                    onChange={e => setManualPackage(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
+                  />
+                  <datalist id="card-modal-package-list">
+                    {uniquePackages.map(p => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-0.5">Ментор</label>
+                  <input
+                    list="card-modal-mentor-list"
+                    placeholder="Ментор"
+                    value={manualMentor}
+                    onChange={e => setManualMentor(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 bg-white text-xs"
+                  />
+                  <datalist id="card-modal-mentor-list">
+                    {ACTIVE_MENTORS.map(m => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-3 py-1 bg-indigo-600 text-white font-semibold rounded text-xs hover:bg-indigo-700"
+                >
+                  Добавить
+                </button>
+              </div>
+            </form>
           </div>
         )}
 
