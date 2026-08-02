@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import ImportScreen from './ImportScreen';
 import HomeTab from './HomeTab';
@@ -13,26 +13,74 @@ import WorkloadTab from './WorkloadTab';
 import LogsTab from './LogsTab';
 import { exportAllData } from '../lib/export';
 
-export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
-  const [activeTab, setActiveTab] = useState('home');
-  const [showSettings, setShowSettings] = useState(false);
+const TABS = [
+  { id: 'home', label: 'Главная' },
+  { id: 'students', label: 'Студенты' },
+  { id: 'calls', label: 'Созвоны' },
+  { id: 'scores', label: 'Оценки' },
+  { id: 'webinars', label: 'Вебинары' },
+  { id: 'activities', label: 'Активности' },
+  { id: 'workload', label: 'Нагрузка' },
+  { id: 'amg', label: 'АМГ' },
+  { id: 'archive', label: 'Архив' },
+  { id: 'logs', label: 'Логи' },
+];
 
-  const TABS = [
-    { id: 'home', label: 'Главная' },
-    { id: 'students', label: 'Студенты' },
-    { id: 'calls', label: 'Созвоны' },
-    { id: 'scores', label: 'Оценки' },
-    { id: 'webinars', label: 'Вебинары' },
-    { id: 'activities', label: 'Активности' },
-    { id: 'workload', label: 'Нагрузка' },
-    { id: 'amg', label: 'АМГ' },
-    { id: 'archive', label: 'Архив' },
-    { id: 'logs', label: 'Логи' },
-  ];
+function getInitialTab(): string {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam && TABS.some(t => t.id === tabParam)) {
+      return tabParam;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return 'home';
+}
+
+export default function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+  const [showSettings, setShowSettings] = useState(false);
+  const [targetStudent, setTargetStudent] = useState<any>(null);
+
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const currentTab = url.searchParams.get('tab');
+      if (activeTab === 'home') {
+        if (currentTab) {
+          url.searchParams.delete('tab');
+          window.history.replaceState({}, '', url.toString());
+        }
+      } else if (currentTab !== activeTab) {
+        url.searchParams.set('tab', activeTab);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        if (tabParam && TABS.some(t => t.id === tabParam)) {
+          setActiveTab(tabParam);
+        } else {
+          setActiveTab('home');
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const userInitials = user.email ? user.email.substring(0, 2).toUpperCase() : 'U';
-
-  const [targetStudent, setTargetStudent] = useState<any>(null);
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900">

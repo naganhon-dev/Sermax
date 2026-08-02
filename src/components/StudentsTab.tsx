@@ -146,18 +146,338 @@ export default function StudentsTab({ targetStudent }: { targetStudent?: any }) 
       <div className="flex-1 overflow-hidden relative">
         {subTab === 'registry' && <RegistryView targetStudent={targetStudent} collectionName="students" />}
         {subTab === 'graduates' && <RegistryView collectionName="graduates" />}
-        {subTab === 'blacklist' && <RegistryView collectionName="blacklist" />}
+        {subTab === 'blacklist' && <BlacklistView />}
       </div>
+    </div>
+  );
+}
+
+function BlacklistView() {
+  const { data: records, loading } = useCollection('blacklist');
+  const [search, setSearch] = useState('');
+
+  // Modal State
+  const [showModal, setShowModal] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
+  const [emailInput, setEmailInput] = useState('');
+  const [commentInput, setCommentInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Inline Comment Editing State
+  const [editingInlineId, setEditingInlineId] = useState<string | null>(null);
+  const [inlineCommentVal, setInlineCommentVal] = useState('');
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return records;
+    const q = search.trim().toLowerCase();
+    return records.filter((r: any) => {
+      const email = String(r.email || r['Почта'] || r['Email'] || '').toLowerCase();
+      const comment = String(r.comment || r['Комментарий'] || r['Причина'] || '').toLowerCase();
+      return email.includes(q) || comment.includes(q);
+    });
+  }, [records, search]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const emailA = String(a.email || a['Почта'] || a['Email'] || '').toLowerCase();
+      const emailB = String(b.email || b['Почта'] || b['Email'] || '').toLowerCase();
+      return emailA.localeCompare(emailB);
+    });
+  }, [filtered]);
+
+  const {
+    currentPage,
+    setCurrentPage,
+    pageSize,
+    setPageSize,
+    paginatedData,
+    totalPages,
+    startIndex,
+    endIndex,
+    totalItems,
+  } = usePagination<any>(sorted, [search], 'pageSize_blacklist');
+
+  const handleOpenAdd = () => {
+    setEditingRecord(null);
+    setEmailInput('');
+    setCommentInput('');
+    setErrorMsg('');
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (rec: any) => {
+    setEditingRecord(rec);
+    setEmailInput(rec.email || rec['Почта'] || rec['Email'] || '');
+    setCommentInput(rec.comment || rec['Комментарий'] || rec['Причина'] || '');
+    setErrorMsg('');
+    setShowModal(true);
+  };
+
+  const handleSaveModal = () => {
+    const trimmedEmail = emailInput.trim();
+    if (!trimmedEmail) {
+      setErrorMsg('Укажите email');
+      return;
+    }
+
+    const payload = {
+      email: trimmedEmail,
+      comment: commentInput.trim(),
+      'Почта': trimmedEmail,
+      'Комментарий': commentInput.trim(),
+    };
+
+    if (editingRecord) {
+      updateRecord('blacklist', editingRecord.id, {
+        ...editingRecord,
+        ...payload,
+      });
+    } else {
+      createRecord('blacklist', {
+        id: crypto.randomUUID(),
+        ...payload,
+      });
+    }
+
+    setShowModal(false);
+  };
+
+  const handleDelete = (rec: any) => {
+    const emailStr = rec.email || rec['Почта'] || rec['Email'] || 'эту запись';
+    if (confirm(`Удалить ${emailStr} из ручной рассылки?`)) {
+      deleteRecord('blacklist', rec.id, rec);
+    }
+  };
+
+  const handleStartInlineEdit = (rec: any) => {
+    setEditingInlineId(rec.id);
+    setInlineCommentVal(rec.comment || rec['Комментарий'] || rec['Причина'] || '');
+  };
+
+  const handleSaveInlineComment = (rec: any) => {
+    if (editingInlineId !== rec.id) return;
+    updateRecord('blacklist', rec.id, {
+      ...rec,
+      comment: inlineCommentVal.trim(),
+      'Комментарий': inlineCommentVal.trim(),
+    });
+    setEditingInlineId(null);
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white">
+      {/* Top Filter & Action Bar */}
+      <div className="p-4 border-b border-gray-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+        <div className="relative w-72">
+          <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Поиск по почте..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-3 py-1.5 border border-gray-300 rounded-md text-sm w-full focus:ring-2 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+
+        <button
+          onClick={handleOpenAdd}
+          className="bg-blue-600 text-white px-3.5 py-1.5 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm"
+        >
+          <Plus className="w-4 h-4" /> Добавить
+        </button>
+      </div>
+
+      {/* Table Content */}
+      <div className="flex-1 overflow-auto p-4">
+        <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
+          <table className="w-full text-left text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                <th className="py-3 px-4 w-1/3">Почта</th>
+                <th className="py-3 px-4">Комментарий</th>
+                <th className="py-3 px-4 w-28 text-right">Действия</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {paginatedData.map((rec: any) => {
+                const emailStr = rec.email || rec['Почта'] || rec['Email'] || '';
+                const commentStr = rec.comment || rec['Комментарий'] || rec['Причина'] || '';
+                const isInline = editingInlineId === rec.id;
+
+                return (
+                  <tr key={rec.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="py-2.5 px-4 font-medium text-gray-900 select-all">
+                      {emailStr || <span className="text-gray-400 italic">Без email</span>}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-gray-700">
+                      {isInline ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            className="w-full border border-blue-400 rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            value={inlineCommentVal}
+                            onChange={(e) => setInlineCommentVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveInlineComment(rec);
+                              if (e.key === 'Escape') setEditingInlineId(null);
+                            }}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveInlineComment(rec)}
+                            className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded font-medium hover:bg-blue-700 shrink-0"
+                          >
+                            ОК
+                          </button>
+                          <button
+                            onClick={() => setEditingInlineId(null)}
+                            className="text-xs border border-gray-300 px-2 py-1 rounded text-gray-600 hover:bg-gray-100 shrink-0"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => handleStartInlineEdit(rec)}
+                          className="cursor-pointer hover:bg-gray-100 px-2 py-1 -ml-2 rounded group flex items-center justify-between min-h-[28px]"
+                          title="Нажмите для редактирования"
+                        >
+                          <span className={commentStr ? 'text-gray-800' : 'text-gray-400 italic'}>
+                            {commentStr || 'Нажмите, чтобы добавить комментарий'}
+                          </span>
+                          <span className="text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0">
+                            изменить
+                          </span>
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleOpenEdit(rec)}
+                          className="text-gray-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition-colors"
+                          title="Редактировать"
+                        >
+                          <span className="text-xs font-medium text-blue-600">Редакт.</span>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(rec)}
+                          className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                          title="Удалить из рассылки"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {paginatedData.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="py-12 text-center text-gray-500">
+                    {loading ? 'Загрузка...' : 'Записи не найдены'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Pagination Footer */}
+      <Pagination
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        pageSize={pageSize}
+        setPageSize={setPageSize}
+        totalPages={totalPages}
+        startIndex={startIndex}
+        endIndex={endIndex}
+        totalItems={totalItems}
+        grandTotal={records.length}
+      />
+
+      {/* Add / Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-900 text-base">
+                {editingRecord ? 'Редактировать запись' : 'Добавить в ручную рассылку'}
+              </h3>
+              <button
+                onClick={() => setShowModal(false)}
+                className="p-1 hover:bg-gray-200 rounded text-gray-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Почта (email) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  placeholder="example@gmail.com"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={emailInput}
+                  onChange={(e) => {
+                    setEmailInput(e.target.value);
+                    if (errorMsg) setErrorMsg('');
+                  }}
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Комментарий
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Причина или примечание..."
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={commentInput}
+                  onChange={(e) => setCommentInput(e.target.value)}
+                />
+              </div>
+
+              {errorMsg && (
+                <p className="text-xs text-red-600 font-medium">{errorMsg}</p>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="px-3.5 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-100 font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveModal}
+                className="px-4 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 shadow-sm"
+              >
+                {editingRecord ? 'Сохранить' : 'Добавить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, collectionName: string }) {
   const { data: students, loading } = useCollection(collectionName);
-  const [program, setProgram] = useState('Все'); // Все, ГП, Эволюция
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [packageFilter, setPackageFilter] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<any>(targetStudent || null);
 
   useEffect(() => {
@@ -172,31 +492,18 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
   const { handleSort, renderSortIcon, sortData } = useSort();
 
-  // Extract all available fields dynamically across students
-  const availableStudentFields = useMemo(() => {
-    const priority = [
-      'Статус', 'Пакет обучения', 'Программа', 'Рынок', 'Ментор', 
-      'Группа', 'Старт Эво 2.0', 'Старт Наставничество', 'Дата выпуска', 
-      'Дата старта', 'ФИО', 'Почта', 'Телефон', 'Анкета 2/3', 'Отправки', 'Звонки', 'Результаты'
-    ];
-    const set = new Set<string>(priority);
-    students.forEach((s: any) => {
-      Object.keys(s).forEach(k => {
-        if (k !== 'id' && k !== '_isNew' && k !== 'flow_changes' && !k.startsWith('_')) {
-          set.add(k);
-        }
-      });
-    });
-    const all = Array.from(set);
-    return all.sort((a, b) => {
-      const idxA = priority.indexOf(a);
-      const idxB = priority.indexOf(b);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return a.localeCompare(b, 'ru');
-    });
-  }, [students]);
+  const ALLOWED_FILTER_FIELDS = useMemo(() => [
+    'Статус',
+    'Пакет обучения',
+    'Программа',
+    'Рынок',
+    'Ментор',
+    'Группа',
+    'Старт Эво 2.0',
+    'Старт Наставничество',
+    'Дата старта',
+    'Дата выпуска',
+  ], []);
 
   // Extract distinct values for a given field
   const getDistinctValues = (fieldName: string) => {
@@ -222,7 +529,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   };
 
   const addFilterRow = () => {
-    const defaultField = availableStudentFields[0] || 'Статус';
+    const defaultField = ALLOWED_FILTER_FIELDS[0] || 'Статус';
     setDynamicFilters(prev => [
       ...prev,
       {
@@ -244,10 +551,8 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   };
 
   const clearAllFilters = () => {
-    setProgram('Все');
     setSearch('');
     setStatusFilter('');
-    setPackageFilter('');
     setDynamicFilters([]);
   };
 
@@ -274,14 +579,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
       // Exclude leads from the main Student Registry
       if (s.is_lead || s.isLead || s.is_lead_contact) return false;
 
-      // Program check
-      if (program !== 'Все') {
-         const progMatch = s['Программа'] === program || (s['Пакет обучения'] || '').includes(program);
-         if (!progMatch) return false;
-      }
-      
       if (statusFilter && canonStatus(s['Статус']) !== statusFilter) return false;
-      if (packageFilter && String(s['Пакет обучения'] || '').toLowerCase() !== packageFilter.toLowerCase()) return false;
 
       if (search.trim()) {
         const q = search.trim().toLowerCase();
@@ -327,7 +625,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
       return true;
     });
-  }, [students, program, search, statusFilter, packageFilter, dynamicFilters]);
+  }, [students, search, statusFilter, dynamicFilters]);
 
   const sortedData = useMemo(() => sortData(filtered), [filtered, sortData]);
 
@@ -341,7 +639,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
     startIndex,
     endIndex,
     totalItems,
-  } = usePagination(sortedData, [program, search, statusFilter, packageFilter, dynamicFilters], `pageSize_${collectionName}`);
+  } = usePagination(sortedData, [search, statusFilter, dynamicFilters], `pageSize_${collectionName}`);
 
   const statuses = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -356,7 +654,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
     isDateField(df.field) ? (df.dateFrom || df.dateTo) : df.value
   ).length;
 
-  const hasAnyActiveFilter = program !== 'Все' || !!search.trim() || !!statusFilter || !!packageFilter || activeDynamicFiltersCount > 0;
+  const hasAnyActiveFilter = !!search.trim() || !!statusFilter || activeDynamicFiltersCount > 0;
 
   return (
     <div className="flex h-full">
@@ -364,22 +662,16 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
           <div className="p-4 border-b border-gray-200 flex flex-col gap-3">
              <div className="flex gap-4 items-center justify-between flex-wrap">
                 <div className="flex gap-2 items-center flex-wrap">
-                   <select value={program} onChange={e => setProgram(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
-                      <option value="Все">Все программы</option>
-                      <option value="ГП">ГП</option>
-                      <option value="Эволюция">Эволюция</option>
-                   </select>
                    <div className="relative">
                      <Search className="w-4 h-4 absolute left-2 top-2 text-gray-400" />
                      <input placeholder="Поиск (ФИО, почта, тел)..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-2 py-1 border border-gray-300 rounded text-sm w-64 bg-white" />
                    </div>
-                   <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm bg-white">
+                   <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded px-2 py-1 text-sm bg-white font-medium">
                       <option value="">Все статусы</option>
                       {STANDARD_STATUSES.map(st => (
                          <option key={st} value={st}>{st}</option>
                       ))}
                    </select>
-                   <input placeholder="Пакет" value={packageFilter} onChange={e => setPackageFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm w-32 bg-white" />
 
                    {/* Кнопка "Фильтры" */}
                    <button
@@ -444,7 +736,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
                  {dynamicFilters.length === 0 ? (
                    <div className="text-xs text-slate-500 italic py-2 flex items-center gap-2">
-                     <span>Условия не добавлены. Нажмите "+ Добавить условие", чтобы отфильтровать студентов по любому полю карточки.</span>
+                     <span>Условия не добавлены. Нажмите "+ Добавить условие", чтобы отфильтровать студентов по выбранному полю.</span>
                    </div>
                  ) : (
                    <div className="flex flex-col gap-2">
@@ -464,7 +756,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                                onChange={(e) => updateFilterRow(df.id, { field: e.target.value, value: '', dateFrom: '', dateTo: '' })}
                                className="border border-slate-300 rounded px-2.5 py-1 text-xs bg-white focus:ring-1 focus:ring-blue-500 outline-none max-w-[210px] font-medium text-slate-800"
                              >
-                               {availableStudentFields.map(f => (
+                               {ALLOWED_FILTER_FIELDS.map(f => (
                                  <option key={f} value={f}>{f}</option>
                                ))}
                              </select>
@@ -529,15 +821,6 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
              {hasAnyActiveFilter && (
                <div className="flex flex-wrap items-center gap-1.5 pt-1">
                  <span className="text-[11px] font-semibold text-gray-500 mr-1">Активные фильтры:</span>
-                 
-                 {program !== 'Все' && (
-                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-medium">
-                     Программа: {program}
-                     <button type="button" onClick={() => setProgram('Все')} className="hover:text-blue-950 ml-0.5">
-                       <X className="w-3 h-3" />
-                     </button>
-                   </span>
-                 )}
 
                  {search.trim() && (
                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
@@ -552,15 +835,6 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">
                      Статус: {statusFilter}
                      <button type="button" onClick={() => setStatusFilter('')} className="hover:text-emerald-950 ml-0.5">
-                       <X className="w-3 h-3" />
-                     </button>
-                   </span>
-                 )}
-
-                 {packageFilter && (
-                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 text-xs font-medium">
-                     Пакет: {packageFilter}
-                     <button type="button" onClick={() => setPackageFilter('')} className="hover:text-purple-950 ml-0.5">
                        <X className="w-3 h-3" />
                      </button>
                    </span>
@@ -600,9 +874,20 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                </div>
              )}
 
-             <div className="flex gap-4 text-sm text-gray-600 overflow-x-auto pb-1">
+             <div className="flex gap-2 text-sm text-gray-600 overflow-x-auto pb-1 flex-wrap">
                 {Object.entries(statuses).map(([k, v]) => (
-                  <div key={k} className="whitespace-nowrap"><span className="font-semibold text-gray-800">{k}:</span> {v}</div>
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setStatusFilter(statusFilter === k ? '' : k)}
+                    className={`whitespace-nowrap px-2.5 py-1 rounded text-xs transition-colors border ${
+                      statusFilter === k
+                        ? 'bg-blue-100 border-blue-300 text-blue-800 font-semibold shadow-xs'
+                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700 font-medium'
+                    }`}
+                  >
+                    <span>{k}:</span> <span className="font-bold">{v}</span>
+                  </button>
                 ))}
              </div>
           </div>
