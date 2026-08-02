@@ -7,7 +7,7 @@ import Pagination from './Pagination';
 import { auth } from '../firebase';
 import { useResizableColumns } from '../lib/useResizableColumns';
 import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../lib/status';
-import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, StudentDebt } from '../lib/quota';
+import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, getStudentDebtsWithSettlement, StudentDebt } from '../lib/quota';
 
 const isDateField = (k: string) => {
   if (!k) return false;
@@ -992,6 +992,9 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   const { usedMentor, usedGerchik, countedCallsList } = countUsedCalls(data, calls);
   const currentMonthNum = getCurrentMonth(data);
   const { missedMentorTotal, missedGerchikTotal, missedList } = getMissedCalls(data, calls);
+  const studentDebts: StudentDebt[] = getStudentDebtsWithSettlement(data, calls);
+  const debtMentorTotal = studentDebts.filter(d => d.type === 'mentor' && d.status !== 'settled').length;
+  const debtGerchikTotal = studentDebts.filter(d => d.type === 'gerchik' && d.status !== 'settled').length;
   const [showMissedDetails, setShowMissedDetails] = useState(false);
 
   const renderMonthText = () => {
@@ -1468,13 +1471,27 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                       {missedMentorTotal}
                     </span>
                   </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 font-medium">Долг с ментором:</span>
+                    <span className={`font-bold ${debtMentorTotal > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      {debtMentorTotal}
+                    </span>
+                  </div>
                   {plan.blackVersion && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-gray-600 font-medium">Пропущено с Герчиком:</span>
-                      <span className={`font-bold ${missedGerchikTotal > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
-                        {missedGerchikTotal}
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Пропущено с Герчиком:</span>
+                        <span className={`font-bold ${missedGerchikTotal > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                          {missedGerchikTotal}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-600 font-medium">Долг с Герчиком:</span>
+                        <span className={`font-bold ${debtGerchikTotal > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                          {debtGerchikTotal}
+                        </span>
+                      </div>
+                    </>
                   )}
 
                   {missedList.length > 0 && (
@@ -1501,10 +1518,17 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                                     <span className="text-gray-500 font-medium">
                                       {item.count > 1 ? `Созвон #${slot.slotIndex + 1}: ` : ''}
                                       {slot.debt ? (
-                                        <span className="inline-flex items-center gap-1 font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200/70">
-                                          <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
-                                          Долг
-                                        </span>
+                                        slot.debt.status === 'settled' ? (
+                                          <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/70">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                                            Долг погашен (взаимозачёт)
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center gap-1 font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200/70">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                                            Долг
+                                          </span>
+                                        )
                                       ) : (
                                         <span className="inline-flex items-center gap-1 font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/70">
                                           Пропущенный
@@ -1528,8 +1552,17 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                                     )}
                                   </div>
                                   {slot.debt && (
-                                    <div className="bg-red-50/80 text-red-900 p-1.5 rounded border border-red-100 text-[11px] mt-0.5">
-                                      <span className="font-semibold text-red-950">Причина долга:</span> {slot.debt.reason}
+                                    <div className={`p-1.5 rounded border text-[11px] mt-0.5 ${
+                                      slot.debt.status === 'settled'
+                                        ? 'bg-emerald-50/80 text-emerald-900 border-emerald-200/60'
+                                        : 'bg-red-50/80 text-red-900 border-red-100'
+                                    }`}>
+                                      <span className="font-semibold">Причина долга:</span> {slot.debt.reason}
+                                      {slot.debt.status === 'settled' && (
+                                        <span className="block mt-0.5 text-emerald-700 font-medium">
+                                          ✓ Погашен автоматическим взаимозачётом {slot.debt.settledAt ? `(${new Date(slot.debt.settledAt).toLocaleDateString('ru-RU')})` : ''}
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                 </div>

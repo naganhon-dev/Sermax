@@ -319,6 +319,131 @@ export interface StudentDebt {
   reason: string;
   createdAt: string;
   createdBy?: string;
+  status?: 'active' | 'settled';
+  settledByCallId?: string;
+  settledAt?: string;
+}
+
+export function getStudentDebtsWithSettlement(student: any, calls: any[] = []): StudentDebt[] {
+  const rawDebts: StudentDebt[] = Array.isArray(student?.debts) ? student.debts : [];
+  if (rawDebts.length === 0) return [];
+
+  const enrichedDebts: StudentDebt[] = rawDebts.map(d => ({
+    ...d,
+    status: 'active',
+  }));
+
+  if (!student || !Array.isArray(calls)) return enrichedDebts;
+
+  const statusStr = canonStatus(student['Статус'] || student.status);
+  if (statusStr !== 'Учится') {
+    return enrichedDebts;
+  }
+
+  const plan = getStudentPlan(student);
+  if (!plan) return enrichedDebts;
+
+  const validCalls = calls.filter((c: any) => {
+    return (
+      isCallForPrimaryStudent(c, student) &&
+      isIndividualCall(c) &&
+      isCallCounted(c)
+    );
+  });
+
+  if (validCalls.length === 0) return enrichedDebts;
+
+  const mentorCallsByMonth: Record<number, any[]> = {};
+  const gerchikCallsByMonth: Record<number, any[]> = {};
+
+  validCalls.forEach((c: any) => {
+    const m = getCallStudyMonth(c, student);
+    if (!m) return;
+    const mentor = c['Ментор'] || c.mentor || c['ментор'] || '';
+    if (canonMentor(mentor) === 'Герчик') {
+      if (!gerchikCallsByMonth[m]) gerchikCallsByMonth[m] = [];
+      gerchikCallsByMonth[m].push(c);
+    } else {
+      if (!mentorCallsByMonth[m]) mentorCallsByMonth[m] = [];
+      mentorCallsByMonth[m].push(c);
+    }
+  });
+
+  interface ExtraCallItem {
+    call: any;
+    type: 'mentor' | 'gerchik';
+    date: number;
+  }
+  const extraCalls: ExtraCallItem[] = [];
+
+  const maxMonth = plan.product === 'Наставничество' ? 6 : 12;
+  const allMonths = new Set<number>();
+  Object.keys(mentorCallsByMonth).forEach(m => allMonths.add(Number(m)));
+  Object.keys(gerchikCallsByMonth).forEach(m => allMonths.add(Number(m)));
+  for (let m = 1; m <= maxMonth; m++) allMonths.add(m);
+
+  allMonths.forEach(m => {
+    const { mentorPlan, gerchikPlan } = getMonthlyPlan(student, m);
+
+    const mCalls = mentorCallsByMonth[m] || [];
+    mCalls.sort((a, b) => new Date(a.date || a['Дата'] || 0).getTime() - new Date(b.date || b['Дата'] || 0).getTime());
+    if (mCalls.length > mentorPlan) {
+      const extras = mCalls.slice(mentorPlan);
+      extras.forEach(c => {
+        const timestamp = new Date(c.date || c['Дата'] || 0).getTime();
+        extraCalls.push({ call: c, type: 'mentor', date: timestamp });
+      });
+    }
+
+    if (plan.blackVersion && gerchikPlan > 0) {
+      const gCalls = gerchikCallsByMonth[m] || [];
+      gCalls.sort((a, b) => new Date(a.date || a['Дата'] || 0).getTime() - new Date(b.date || b['Дата'] || 0).getTime());
+      if (gCalls.length > gerchikPlan) {
+        const extras = gCalls.slice(gerchikPlan);
+        extras.forEach(c => {
+          const timestamp = new Date(c.date || c['Дата'] || 0).getTime();
+          extraCalls.push({ call: c, type: 'gerchik', date: timestamp });
+        });
+      }
+    }
+  });
+
+  extraCalls.sort((a, b) => a.date - b.date);
+
+  const assignedMentor = canonMentor(student['Ментор'] || student.mentor);
+
+  extraCalls.forEach(extra => {
+    if (extra.type === 'mentor') {
+      if (plan.product === 'Наставничество') {
+        const callMentor = canonMentor(extra.call['Ментор'] || extra.call.mentor || extra.call['ментор'] || '');
+        if (!assignedMentor || callMentor !== assignedMentor) {
+          return;
+        }
+      }
+
+      const target = enrichedDebts
+        .filter(d => d.type === 'mentor' && d.status !== 'settled')
+        .sort((a, b) => a.month - b.month || (a.slotIndex ?? 0) - (b.slotIndex ?? 0))[0];
+
+      if (target) {
+        target.status = 'settled';
+        target.settledByCallId = extra.call.id;
+        target.settledAt = extra.call.date || extra.call['Дата'] || new Date().toISOString();
+      }
+    } else if (extra.type === 'gerchik') {
+      const target = enrichedDebts
+        .filter(d => d.type === 'gerchik' && d.status !== 'settled')
+        .sort((a, b) => a.month - b.month || (a.slotIndex ?? 0) - (b.slotIndex ?? 0))[0];
+
+      if (target) {
+        target.status = 'settled';
+        target.settledByCallId = extra.call.id;
+        target.settledAt = extra.call.date || extra.call['Дата'] || new Date().toISOString();
+      }
+    }
+  });
+
+  return enrichedDebts;
 }
 
 export interface MissedCallSlot {
@@ -366,7 +491,7 @@ export function getMissedCalls(student: any, calls: any[] = []): MissedCallsResu
     return emptyResult;
   }
 
-  const studentDebts: StudentDebt[] = Array.isArray(student.debts) ? student.debts : [];
+  const studentDebts: StudentDebt[] = getStudentDebtsWithSettlement(student, calls);
 
   // Filter valid student calls
   const validCalls = calls.filter((c: any) => {

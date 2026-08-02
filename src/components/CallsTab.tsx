@@ -2,6 +2,7 @@ import { useState, useMemo, Fragment, FormEvent } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, ChevronRight, ChevronDown, ChevronUp, Search, Calendar, Clock, UserPlus, Phone, Mail, User, BookOpen, AlertCircle, XCircle, Users, Award, Eye } from 'lucide-react';
 import { canonStatus, ACTIVE_MENTORS, canonMentor } from '../lib/status';
+import { getStudentDebtsWithSettlement } from '../lib/quota';
 import { auth } from '../firebase';
 import CreateGroupEventModal, { GROUP_EVENT_TYPES } from './CreateGroupEventModal';
 import GroupEventCardModal from './GroupEventCardModal';
@@ -87,6 +88,8 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
 
   const [activeType, setActiveType] = useState<string | null>(null);
   const [showSummary, setShowSummary] = useState(true);
+  const [showMentorDebts, setShowMentorDebts] = useState(false);
+  const [showGerchikDebts, setShowGerchikDebts] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState('');
   const [leadProgramFilter, setLeadProgramFilter] = useState('Все');
@@ -469,6 +472,58 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
     
     return Array.from(studentMap.values());
   }, [students, calls, currentType]);
+
+  const mentorDebtsStudents = useMemo(() => {
+    if (!Array.isArray(students)) return [];
+    return students
+      .map((s: any) => {
+        const enriched = getStudentDebtsWithSettlement(s, calls || []);
+        const debtsList = enriched.filter((d: any) => d.type === 'mentor');
+        const activeDebts = debtsList.filter((d: any) => d.status !== 'settled');
+        const settledDebts = debtsList.filter((d: any) => d.status === 'settled');
+        return {
+          student: s,
+          fio: toText(s['ФИО'] || s.fio || s['Имя']).trim() || 'Без имени',
+          email: toText(s['Почта'] || s.email).trim() || 'Почта не указана',
+          mentor: toText(s['Ментор'] || s.mentor).trim() || 'Не указан',
+          debts: debtsList,
+          activeDebts,
+          settledDebts,
+        };
+      })
+      .filter(item => item.debts.length > 0)
+      .sort((a, b) => b.activeDebts.length - a.activeDebts.length || a.fio.localeCompare(b.fio, 'ru'));
+  }, [students, calls]);
+
+  const gerchikDebtsStudents = useMemo(() => {
+    if (!Array.isArray(students)) return [];
+    return students
+      .map((s: any) => {
+        const enriched = getStudentDebtsWithSettlement(s, calls || []);
+        const debtsList = enriched.filter((d: any) => d.type === 'gerchik');
+        const activeDebts = debtsList.filter((d: any) => d.status !== 'settled');
+        const settledDebts = debtsList.filter((d: any) => d.status === 'settled');
+        return {
+          student: s,
+          fio: toText(s['ФИО'] || s.fio || s['Имя']).trim() || 'Без имени',
+          email: toText(s['Почта'] || s.email).trim() || 'Почта не указана',
+          mentor: toText(s['Ментор'] || s.mentor).trim() || 'Не указан',
+          debts: debtsList,
+          activeDebts,
+          settledDebts,
+        };
+      })
+      .filter(item => item.debts.length > 0)
+      .sort((a, b) => b.activeDebts.length - a.activeDebts.length || a.fio.localeCompare(b.fio, 'ru'));
+  }, [students, calls]);
+
+  const totalMentorDebtsCount = useMemo(() => {
+    return mentorDebtsStudents.reduce((sum, item) => sum + item.activeDebts.length, 0);
+  }, [mentorDebtsStudents]);
+
+  const totalGerchikDebtsCount = useMemo(() => {
+    return gerchikDebtsStudents.reduce((sum, item) => sum + item.activeDebts.length, 0);
+  }, [gerchikDebtsStudents]);
 
   const filteredStudents = useMemo(() => {
     let list = studentsInType;
@@ -1261,6 +1316,186 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                               </tr>
                             );
                           })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Collapsible Mentor Debts Section */}
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button 
+                  onClick={() => setShowMentorDebts(!showMentorDebts)}
+                  className="w-full px-4 py-3 bg-red-50/50 hover:bg-red-100/50 border-b border-gray-100 flex justify-between items-center text-sm font-semibold text-gray-800 transition-colors focus:outline-none"
+                >
+                  <span className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    <span>Долги с менторами ({mentorDebtsStudents.length})</span>
+                    {totalMentorDebtsCount > 0 && (
+                      <span className="text-xs font-normal text-red-700 bg-red-100 px-2 py-0.5 rounded-full border border-red-200">
+                        Всего долгов: {totalMentorDebtsCount}
+                      </span>
+                    )}
+                  </span>
+                  {showMentorDebts ? <ChevronUp className="w-4 h-4 text-gray-500"/> : <ChevronDown className="w-4 h-4 text-gray-500"/>}
+                </button>
+                {showMentorDebts && (
+                  <div className="overflow-x-auto max-h-80">
+                    {mentorDebtsStudents.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">Нет текущих долгов с менторами</div>
+                    ) : (
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-gray-50 sticky top-0 shadow-sm z-10">
+                          <tr className="border-b border-gray-200">
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700 min-w-[200px]">Студент (ФИО / Почта)</th>
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700 min-w-[140px]">Закреплённый ментор</th>
+                            <th className="py-2.5 px-3 text-center border-r border-gray-200 font-semibold text-gray-700 min-w-[90px]">Всего долгов</th>
+                            <th className="py-2.5 px-3 font-semibold text-gray-700">Список долгов (Месяц, Причина)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mentorDebtsStudents.map(item => (
+                            <tr 
+                              key={item.student.id || `${item.email}::${item.fio}`}
+                              className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
+                            >
+                              <td 
+                                className="py-2.5 px-3 font-medium border-r border-gray-200 cursor-pointer hover:text-indigo-600"
+                                onClick={() => onSelectStudent?.(item.student)}
+                              >
+                                <div className="font-semibold text-gray-900">{item.fio}</div>
+                                <div className="text-[11px] text-gray-500 font-normal">{item.email}</div>
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-gray-200 text-gray-800 font-medium">
+                                {item.mentor}
+                              </td>
+                              <td className="py-2.5 px-3 text-center border-r border-gray-200 font-bold bg-red-50/40">
+                                <span className={item.activeDebts.length > 0 ? "text-red-600 font-bold text-sm" : "text-gray-400 font-normal"}>
+                                  {item.activeDebts.length}
+                                </span>
+                                {item.settledDebts.length > 0 && (
+                                  <span className="text-[10px] text-emerald-600 font-normal block leading-tight">
+                                    +{item.settledDebts.length} погашен
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="flex flex-wrap gap-1.5">
+                                  {item.debts.map((d: any, idx: number) => (
+                                    d.status === 'settled' ? (
+                                      <div key={d.id || idx} className="inline-flex flex-col bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-[11px]">
+                                        <span className="font-bold text-emerald-950 flex items-center gap-1">
+                                          <span>Месяц {d.month} {d.slotIndex > 0 ? `(#${d.slotIndex + 1})` : ''}</span>
+                                          <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-medium">Погашен</span>
+                                        </span>
+                                        <span className="text-emerald-700 font-normal">
+                                          {d.reason || 'Причина не указана'}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div key={d.id || idx} className="inline-flex flex-col bg-red-50 border border-red-200 rounded px-2 py-1 text-[11px]">
+                                        <span className="font-bold text-red-900">
+                                          Месяц {d.month} {d.slotIndex > 0 ? `(#${d.slotIndex + 1})` : ''}
+                                        </span>
+                                        <span className="text-red-700 font-normal">
+                                          {d.reason || 'Причина не указана'}
+                                        </span>
+                                      </div>
+                                    )
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Collapsible Gerchik Debts Section */}
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button 
+                  onClick={() => setShowGerchikDebts(!showGerchikDebts)}
+                  className="w-full px-4 py-3 bg-amber-50/50 hover:bg-amber-100/50 border-b border-gray-100 flex justify-between items-center text-sm font-semibold text-gray-800 transition-colors focus:outline-none"
+                >
+                  <span className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                    <span>Долги с Герчиком ({gerchikDebtsStudents.length})</span>
+                    {totalGerchikDebtsCount > 0 && (
+                      <span className="text-xs font-normal text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full border border-amber-200">
+                        Всего долгов: {totalGerchikDebtsCount}
+                      </span>
+                    )}
+                  </span>
+                  {showGerchikDebts ? <ChevronUp className="w-4 h-4 text-gray-500"/> : <ChevronDown className="w-4 h-4 text-gray-500"/>}
+                </button>
+                {showGerchikDebts && (
+                  <div className="overflow-x-auto max-h-80">
+                    {gerchikDebtsStudents.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">Нет текущих долгов с Герчиком</div>
+                    ) : (
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-gray-50 sticky top-0 shadow-sm z-10">
+                          <tr className="border-b border-gray-200">
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700 min-w-[200px]">Студент (ФИО / Почта)</th>
+                            <th className="py-2.5 px-3 text-center border-r border-gray-200 font-semibold text-gray-700 min-w-[90px]">Всего долгов</th>
+                            <th className="py-2.5 px-3 font-semibold text-gray-700">Список долгов (Месяц, Причина)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gerchikDebtsStudents.map(item => (
+                            <tr 
+                              key={item.student.id || `${item.email}::${item.fio}`}
+                              className="border-b border-gray-200 hover:bg-gray-50 transition-colors"
+                            >
+                              <td 
+                                className="py-2.5 px-3 font-medium border-r border-gray-200 cursor-pointer hover:text-indigo-600"
+                                onClick={() => onSelectStudent?.(item.student)}
+                              >
+                                <div className="font-semibold text-gray-900">{item.fio}</div>
+                                <div className="text-[11px] text-gray-500 font-normal">{item.email}</div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center border-r border-gray-200 font-bold bg-amber-50/40">
+                                <span className={item.activeDebts.length > 0 ? "text-amber-700 font-bold text-sm" : "text-gray-400 font-normal"}>
+                                  {item.activeDebts.length}
+                                </span>
+                                {item.settledDebts.length > 0 && (
+                                  <span className="text-[10px] text-emerald-600 font-normal block leading-tight">
+                                    +{item.settledDebts.length} погашен
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-2 px-3">
+                                <div className="flex flex-wrap gap-1.5">
+                                  {item.debts.map((d: any, idx: number) => (
+                                    d.status === 'settled' ? (
+                                      <div key={d.id || idx} className="inline-flex flex-col bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-[11px]">
+                                        <span className="font-bold text-emerald-950 flex items-center gap-1">
+                                          <span>Месяц {d.month} {d.slotIndex > 0 ? `(#${d.slotIndex + 1})` : ''}</span>
+                                          <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 rounded font-medium">Погашен</span>
+                                        </span>
+                                        <span className="text-emerald-700 font-normal">
+                                          {d.reason || 'Причина не указана'}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <div key={d.id || idx} className="inline-flex flex-col bg-amber-50 border border-amber-200 rounded px-2 py-1 text-[11px]">
+                                        <span className="font-bold text-amber-950">
+                                          Месяц {d.month} {d.slotIndex > 0 ? `(#${d.slotIndex + 1})` : ''}
+                                        </span>
+                                        <span className="text-amber-800 font-normal">
+                                          {d.reason || 'Причина не указана'}
+                                        </span>
+                                      </div>
+                                    )
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     )}
