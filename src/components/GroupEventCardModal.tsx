@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { updateRecord } from '../lib/useCollection';
 import { X, Check, X as IconX, AlertTriangle, Users, Plus, Search, Trash2 } from 'lucide-react';
 import { canonStatus } from '../lib/status';
+import { canonMentor, ACTIVE_MENTORS } from '../lib/mentors';
 
 interface GroupParticipant {
   email: string;
@@ -127,7 +128,7 @@ export default function GroupEventCardModal({
       present: null,
       initial_group: (student['Группа'] || student['группа'] || '').trim(),
       initial_package: (student['Программа'] || student['Пакет'] || student['программа'] || student['пакет'] || '').trim(),
-      initial_mentor: (student['Ментор'] || student['ментор'] || '').trim()
+      initial_mentor: canonMentor(student['Ментор'] || student['ментор'] || '').trim()
     };
 
     const updated = [...participants, newP];

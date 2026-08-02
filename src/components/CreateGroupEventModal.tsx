@@ -2,6 +2,7 @@ import { useState, useMemo, FormEvent } from 'react';
 import { createRecord } from '../lib/useCollection';
 import { X, Users, Plus, Trash2, Search, CheckCircle2, Sparkles } from 'lucide-react';
 import { canonStatus } from '../lib/status';
+import { ACTIVE_MENTORS, canonMentor } from '../lib/mentors';
 
 export const GROUP_EVENT_TYPES = ['Групповой созвон', 'Выпускной', 'Групповой торговый день'];
 
@@ -209,7 +210,7 @@ export default function CreateGroupEventModal({
       Дата: fromDateInput(date),
       Время: time,
       Месяц: monthNum,
-      Ментор: mentor.trim(),
+      Ментор: canonMentor(mentor.trim()),
       participants: participants.map(p => ({
         email: p.email,
         fio: p.fio,
@@ -295,10 +296,10 @@ export default function CreateGroupEventModal({
                 placeholder="Выберите или введите ментора"
                 value={mentor}
                 onChange={e => setMentor(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
               />
               <datalist id="mentor-group-create-list">
-                {allMentorsList.map(m => (
+                {ACTIVE_MENTORS.map(m => (
                   <option key={m} value={m} />
                 ))}
               </datalist>
@@ -339,44 +340,50 @@ export default function CreateGroupEventModal({
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Пакет / Программа</label>
-                <select
+                <input
+                  list="create-group-package-filter"
+                  placeholder="Все пакеты"
                   value={filterPackage}
                   onChange={e => setFilterPackage(e.target.value)}
                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">Все пакеты</option>
+                />
+                <datalist id="create-group-package-filter">
                   {availablePackages.map(p => (
-                    <option key={p} value={p}>{p}</option>
+                    <option key={p} value={p} />
                   ))}
-                </select>
+                </datalist>
               </div>
 
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Группа / Поток</label>
-                <select
+                <input
+                  list="create-group-group-filter"
+                  placeholder="Все группы"
                   value={filterGroup}
                   onChange={e => setFilterGroup(e.target.value)}
                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">Все группы</option>
+                />
+                <datalist id="create-group-group-filter">
                   {availableGroups.map(g => (
-                    <option key={g} value={g}>{g}</option>
+                    <option key={g} value={g} />
                   ))}
-                </select>
+                </datalist>
               </div>
 
               <div>
                 <label className="block font-medium text-gray-600 mb-0.5">Ментор группы</label>
-                <select
+                <input
+                  list="create-group-mentor-filter"
+                  placeholder="Все менторы"
                   value={filterMentor}
                   onChange={e => setFilterMentor(e.target.value)}
                   className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">Все менторы</option>
-                  {allMentorsList.map(m => (
-                    <option key={m} value={m}>{m}</option>
+                />
+                <datalist id="create-group-mentor-filter">
+                  {ACTIVE_MENTORS.map(m => (
+                    <option key={m} value={m} />
                   ))}
-                </select>
+                </datalist>
               </div>
             </div>
 

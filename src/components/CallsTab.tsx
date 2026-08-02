@@ -1,7 +1,7 @@
 import { useState, useMemo, Fragment, FormEvent } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, ChevronRight, ChevronDown, ChevronUp, Search, Calendar, Clock, UserPlus, Phone, Mail, User, BookOpen, AlertCircle, XCircle, Users, Award, Eye } from 'lucide-react';
-import { canonStatus, ACTIVE_MENTORS } from '../lib/status';
+import { canonStatus, ACTIVE_MENTORS, canonMentor } from '../lib/status';
 import { auth } from '../firebase';
 import CreateGroupEventModal, { GROUP_EVENT_TYPES } from './CreateGroupEventModal';
 import GroupEventCardModal from './GroupEventCardModal';
@@ -212,19 +212,28 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
     return 'hover:bg-gray-50 transition-colors';
   };
 
-  // List of mentors for datalists
-  const allMentorsList = useMemo(() => {
-    const set = new Set<string>(ACTIVE_MENTORS);
-    calls.forEach(c => {
-      const val = toText(c.Ментор).trim();
-      if (val) set.add(val);
-    });
-    leads.forEach(l => {
-      const val = toText(l.Ментор).trim();
-      if (val) set.add(val);
-    });
-    return Array.from(set).sort();
-  }, [calls, leads]);
+  // Active mentors and student attributes for datalists
+  const allMentorsList = ACTIVE_MENTORS;
+
+  const uniquePackages = useMemo(() => {
+    return Array.from(
+      new Set(
+        (students || [])
+          .map((s: any) => s['Пакет обучения'] || s['Пакет'] || s['программа'] || s['Программа'])
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [students]);
+
+  const uniqueGroups = useMemo(() => {
+    return Array.from(
+      new Set(
+        (students || [])
+          .map((s: any) => s['Группа'] || s['группа'])
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [students]);
 
   // Aggregated Leads for "Созвоны для дожатия"
   const leadList = useMemo(() => {
@@ -557,7 +566,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       Почта: leadForm.email.trim(),
       Телефон: leadForm.phone.trim(),
       Программа: leadForm.program.trim(),
-      Ментор: leadForm.mentor.trim(),
+      Ментор: canonMentor(leadForm.mentor.trim()),
       is_lead: true,
       created_at: new Date().toISOString()
     };
@@ -571,7 +580,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
         Почта: leadForm.email.trim(),
         Телефон: leadForm.phone.trim(),
         Программа: leadForm.program.trim(),
-        Ментор: leadForm.mentor.trim(),
+        Ментор: canonMentor(leadForm.mentor.trim()),
         Дата: fromDateInput(leadForm.date),
         Время: leadForm.time,
         Месяц: leadForm.date ? (new Date(leadForm.date).getMonth() + 1) : (new Date().getMonth() + 1),
@@ -610,7 +619,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       Почта: selectedLeadForCall.Почта,
       Телефон: selectedLeadForCall.Телефон,
       Программа: selectedLeadForCall.Программа,
-      Ментор: addCallForm.mentor.trim() || selectedLeadForCall.Ментор,
+      Ментор: canonMentor(addCallForm.mentor.trim() || selectedLeadForCall.Ментор || ''),
       Дата: dateStr,
       Время: addCallForm.time,
       Месяц: monthVal,
@@ -1713,7 +1722,11 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
               onSubmit={async (e) => {
                 e.preventDefault();
                 if (editingStudentModal.id) {
-                  await updateRecord('students', editingStudentModal.id, editingStudentModal);
+                  const toSave = {
+                    ...editingStudentModal,
+                    Ментор: canonMentor(editingStudentModal.Ментор || '')
+                  };
+                  await updateRecord('students', editingStudentModal.id, toSave);
                 }
                 setEditingStudentModal(null);
               }}
@@ -1755,20 +1768,32 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Программа</label>
                   <input
-                    type="text"
-                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    list="edit-student-program-list"
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Программа || ''}
                     onChange={e => setEditingStudentModal({ ...editingStudentModal, Программа: e.target.value })}
+                    placeholder="Выберите или введите программу"
                   />
+                  <datalist id="edit-student-program-list">
+                    {uniquePackages.map(p => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Ментор</label>
                   <input
-                    type="text"
-                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    list="edit-student-mentor-list"
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Ментор || ''}
                     onChange={e => setEditingStudentModal({ ...editingStudentModal, Ментор: e.target.value })}
+                    placeholder="Выберите или введите ментора"
                   />
+                  <datalist id="edit-student-mentor-list">
+                    {ACTIVE_MENTORS.map(m => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -1789,11 +1814,17 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                 <div>
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Группа</label>
                   <input
-                    type="text"
-                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    list="edit-student-group-list"
+                    className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
                     value={editingStudentModal.Группа || ''}
                     onChange={e => setEditingStudentModal({ ...editingStudentModal, Группа: e.target.value })}
+                    placeholder="Выберите или введите группу"
                   />
+                  <datalist id="edit-student-group-list">
+                    {uniqueGroups.map(g => (
+                      <option key={g} value={g} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -1873,14 +1904,7 @@ function CellPopover({ student, month, currentType, calls, onClose, onOpenUncoun
   const [newDuration, setNewDuration] = useState('15');
   const [newNote, setNewNote] = useState('');
 
-  const allMentors = useMemo(() => {
-    const set = new Set<string>();
-    calls.forEach(c => {
-      const val = toText(c.Ментор).trim();
-      if (val) set.add(val);
-    });
-    return Array.from(set).sort();
-  }, [calls]);
+  const allMentors = ACTIVE_MENTORS;
 
   const handleAddCall = async (e: FormEvent) => {
     e.preventDefault();
@@ -1901,7 +1925,7 @@ function CellPopover({ student, month, currentType, calls, onClose, onOpenUncoun
       Тип: currentType,
       Секция: student.Секция,
       Группа: student.Группа,
-      Ментор: newMentor.trim(),
+      Ментор: canonMentor(newMentor.trim()),
       Дата: fromDateInput(newDate),
       Время: newTime,
       "Длительность мин": Number(newDuration) || 0,

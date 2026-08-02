@@ -62,7 +62,7 @@ export function normalizeToIsoDate(val: any): string {
   return '';
 }
 
-export function sanitizeStudentDates(record: any): any {
+export function sanitizeStudentRecord(record: any): any {
   if (!record || typeof record !== 'object') return record;
   const copy = { ...record };
   for (const k of Object.keys(copy)) {
@@ -70,8 +70,16 @@ export function sanitizeStudentDates(record: any): any {
       copy[k] = normalizeToIsoDate(copy[k]);
     }
   }
+  if ('ментор' in copy && copy['ментор']) {
+    copy['ментор'] = canonMentor(copy['ментор']);
+  }
+  if ('Ментор' in copy && copy['Ментор']) {
+    copy['Ментор'] = canonMentor(copy['Ментор']);
+  }
   return copy;
 }
+
+export const sanitizeStudentDates = sanitizeStudentRecord;
 
 function parseToComparableDate(val: any): Date | null {
   if (!val) return null;
@@ -842,25 +850,33 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     }
   };
 
-  const uniquePackages = Array.from(new Set(allRecords.map(r => r['Пакет обучения']).filter(Boolean)));
-  const uniqueMentors = Array.from(new Set(allRecords.map(r => r['Ментор'] || r['ментор']).filter(Boolean)));
-  const uniqueGroups = Array.from(new Set(allRecords.map(r => r['Группа']).filter(Boolean)));
-  const uniqueMarkets = Array.from(new Set(allRecords.map(r => r['Рынок']).filter(Boolean)));
-
-  const mentorOptions = useMemo(() => {
-    const dbMentors = allRecords
-      .map(r => r['ментор'] || r['Ментор'] || r['mentor'])
-      .filter(Boolean)
-      .map(m => canonMentor(m));
-
+  const uniquePackages = useMemo(() => {
     return Array.from(
       new Set(
-        [...ACTIVE_MENTORS, ...dbMentors]
-          .map(m => canonMentor(m))
+        allRecords
+          .map(r => r['Пакет обучения'] || r['Пакет'] || r['программа'] || r['Программа'])
           .filter(Boolean)
       )
     ).sort();
   }, [allRecords]);
+
+  const uniqueGroups = useMemo(() => {
+    return Array.from(
+      new Set(
+        allRecords
+          .map(r => r['Группа'] || r['группа'])
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [allRecords]);
+
+  const uniqueMarkets = useMemo(() => {
+    return Array.from(
+      new Set(allRecords.map(r => r['Рынок']).filter(Boolean))
+    ).sort();
+  }, [allRecords]);
+
+  const mentorOptions = ACTIVE_MENTORS;
 
   const renderInput = (k: string, isMain = false) => {
     const val = data[k] || '';
@@ -882,7 +898,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     if (k === 'Пакет обучения' || k === 'Ментор' || k === 'Группа' || k === 'Рынок') {
       let options: string[] = [];
       if (k === 'Пакет обучения') options = uniquePackages;
-      if (k === 'Ментор') options = uniqueMentors;
+      if (k === 'Ментор') options = mentorOptions;
       if (k === 'Группа') options = uniqueGroups;
       if (k === 'Рынок') options = uniqueMarkets;
       const listId = `list-${k.replace(/\s+/g, '-')}`;
