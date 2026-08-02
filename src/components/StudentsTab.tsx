@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useCollection, updateRecord, createRecord, deleteRecord } from '../lib/useCollection';
-import { Search, Plus, Trash2, X, Filter } from 'lucide-react';
+import { Search, Plus, Trash2, X, Filter, ChevronDown } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
 import { auth } from '../firebase';
 import { useResizableColumns } from '../lib/useResizableColumns';
 import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../lib/status';
+import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, StudentDebt } from '../lib/quota';
 
 const isDateField = (k: string) => {
   if (!k) return false;
@@ -986,6 +987,29 @@ function StatusBadge({ status }: { status: string }) {
 function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
   const isNew = student._isNew;
   const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
+  const { data: calls } = useCollection('calls');
+  const plan = getStudentPlan(data);
+  const { usedMentor, usedGerchik, countedCallsList } = countUsedCalls(data, calls);
+  const currentMonthNum = getCurrentMonth(data);
+  const { missedMentorTotal, missedGerchikTotal, missedList } = getMissedCalls(data, calls);
+  const [showMissedDetails, setShowMissedDetails] = useState(false);
+
+  const renderMonthText = () => {
+    if (currentMonthNum === null) {
+      return <span className="text-gray-500 font-normal">старт не указан</span>;
+    }
+    if (currentMonthNum === 0) {
+      return <span className="text-amber-700 font-normal">ещё не начал (старт в будущем)</span>;
+    }
+    return <span className="font-bold text-gray-900">{currentMonthNum}</span>;
+  };
+
+  useEffect(() => {
+    if (data && data['ФИО']) {
+      console.log(`[Quota] Студент: "${data['ФИО']}" (ID: ${data.id || 'N/A'})`);
+      console.log(`[Quota] Учтённые созвоны (${countedCallsList.length}):`, countedCallsList);
+    }
+  }, [data, countedCallsList]);
   const [showConfirmDel, setShowConfirmDel] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -998,6 +1022,43 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     reason: ''
   });
   const [flowError, setFlowError] = useState('');
+
+  const [debtModal, setDebtModal] = useState<{
+    month: number;
+    type: 'mentor' | 'gerchik';
+    slotIndex: number;
+    reason: string;
+    error: string;
+  } | null>(null);
+
+  const handleSaveDebt = async () => {
+    if (!debtModal) return;
+    if (!debtModal.reason.trim()) {
+      setDebtModal(prev => prev ? { ...prev, error: 'Укажите причину перевода в долг' } : null);
+      return;
+    }
+
+    const newDebt: StudentDebt = {
+      id: crypto.randomUUID(),
+      month: debtModal.month,
+      type: debtModal.type,
+      slotIndex: debtModal.slotIndex,
+      reason: debtModal.reason.trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: auth.currentUser?.email || 'Неизвестный',
+    };
+
+    const existingDebts = Array.isArray(data.debts) ? data.debts : [];
+    const updatedDebts = [...existingDebts, newDebt];
+
+    const updatedData = { ...data, debts: updatedDebts };
+    setData(updatedData);
+    if (!isNew && data.id) {
+      await updateRecord(collectionName, data.id, { debts: updatedDebts });
+    }
+
+    setDebtModal(null);
+  };
 
   const executeSave = (recordToSave: any) => {
     const sanitizedRecord = sanitizeStudentDates(recordToSave);
@@ -1375,6 +1436,124 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           </div>
         </div>
 
+        {/* Квота созвонов */}
+        <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
+          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Квота созвонов</h4>
+          {plan ? (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between items-center pb-1.5 border-b border-gray-200/60">
+                <span className="text-gray-600 font-medium">Месяц обучения:</span>
+                {renderMonthText()}
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600 font-medium">Инд. с ментором:</span>
+                <span className="font-bold text-gray-900">
+                  {usedMentor} / {plan.planMentor}
+                </span>
+              </div>
+              {plan.blackVersion && (
+                <div className="flex justify-between items-center pt-1.5 border-t border-gray-200/60">
+                  <span className="text-gray-600 font-medium">С Герчиком:</span>
+                  <span className="font-bold text-gray-900">
+                    {usedGerchik} / {plan.planGerchik || 18}
+                  </span>
+                </div>
+              )}
+
+              {canonStatus(data['Статус'] || data.status) === 'Учится' && (
+                <div className="pt-2 border-t border-gray-200/60 flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600 font-medium">Пропущено с ментором:</span>
+                    <span className={`font-bold ${missedMentorTotal > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                      {missedMentorTotal}
+                    </span>
+                  </div>
+                  {plan.blackVersion && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600 font-medium">Пропущено с Герчиком:</span>
+                      <span className={`font-bold ${missedGerchikTotal > 0 ? 'text-amber-600' : 'text-gray-900'}`}>
+                        {missedGerchikTotal}
+                      </span>
+                    </div>
+                  )}
+
+                  {missedList.length > 0 && (
+                    <div className="mt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowMissedDetails(!showMissedDetails)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1 focus:outline-none"
+                      >
+                        <span>{showMissedDetails ? 'Скрыть детали по месяцам' : 'Детали по месяцам'}</span>
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMissedDetails ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showMissedDetails && (
+                        <div className="mt-1.5 pl-2 border-l-2 border-indigo-100 flex flex-col gap-2 text-xs text-gray-600">
+                          {missedList.map((item, idx) => (
+                            <div key={idx} className="flex flex-col gap-1 bg-white p-2 rounded border border-gray-200/80 shadow-xs">
+                              <div className="flex justify-between items-center font-medium text-gray-800">
+                                <span>Месяц {item.month} ({item.type === 'gerchik' ? 'Герчик' : 'ментор'}):</span>
+                                <span className="font-semibold text-amber-700">+{item.count} пропущено</span>
+                              </div>
+                              {item.slots.map((slot) => (
+                                <div key={slot.slotIndex} className="pt-1.5 border-t border-gray-100 flex flex-col gap-1 text-[11px]">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-gray-500 font-medium">
+                                      {item.count > 1 ? `Созвон #${slot.slotIndex + 1}: ` : ''}
+                                      {slot.debt ? (
+                                        <span className="inline-flex items-center gap-1 font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-200/70">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span>
+                                          Долг
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/70">
+                                          Пропущенный
+                                        </span>
+                                      )}
+                                    </span>
+                                    {!slot.debt && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setDebtModal({
+                                          month: item.month,
+                                          type: item.type,
+                                          slotIndex: slot.slotIndex,
+                                          reason: '',
+                                          error: '',
+                                        })}
+                                        className="px-2 py-0.5 text-[11px] font-medium text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-200 rounded transition-colors"
+                                      >
+                                        Перевести в долг
+                                      </button>
+                                    )}
+                                  </div>
+                                  {slot.debt && (
+                                    <div className="bg-red-50/80 text-red-900 p-1.5 rounded border border-red-100 text-[11px] mt-0.5">
+                                      <span className="font-semibold text-red-950">Причина долга:</span> {slot.debt.reason}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs flex flex-col gap-1.5">
+              <div className="font-medium">Квота: не определена</div>
+              <div className="flex justify-between items-center text-sm pt-1 border-t border-amber-200/60">
+                <span className="text-amber-900 font-medium">Месяц обучения:</span>
+                {renderMonthText()}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Рынок</label>
           {renderInput('Рынок', true)}
@@ -1597,6 +1776,64 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                 className="px-4 py-1.5 text-sm font-medium bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
               >
                 Сохранить смену
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {debtModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-5 border border-gray-100 animate-in fade-in zoom-in duration-150">
+            <div className="flex justify-between items-center pb-3 border-b border-gray-100">
+              <h3 className="font-bold text-gray-900 text-base">Перевод пропуска в Долг</h3>
+              <button
+                type="button"
+                onClick={() => setDebtModal(null)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 text-xs text-gray-700 space-y-1">
+                <div><span className="font-semibold text-gray-900">Студент:</span> {data['ФИО'] || data.fio || '—'}</div>
+                <div><span className="font-semibold text-gray-900">Месяц обучения:</span> {debtModal.month}</div>
+                <div><span className="font-semibold text-gray-900">Тип созвона:</span> {debtModal.type === 'gerchik' ? 'Герчик' : 'Ментор'} {debtModal.slotIndex > 0 ? `(#${debtModal.slotIndex + 1})` : ''}</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Причина перевода в долг <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={debtModal.reason}
+                  onChange={(e) => setDebtModal({ ...debtModal, reason: e.target.value, error: '' })}
+                  placeholder="Укажите причину (например: не дозвонились, студент попросил перенести, технический сбой)"
+                  rows={3}
+                  className="w-full text-xs p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                />
+                {debtModal.error && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">{debtModal.error}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setDebtModal(null)}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDebt}
+                className="px-4 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition-colors"
+              >
+                Сохранить (Перевести в долг)
               </button>
             </div>
           </div>
