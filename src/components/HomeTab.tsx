@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useCollection } from '../lib/useCollection';
 import { Search, Users, Activity, Star } from 'lucide-react';
 import { canonStatus } from '../lib/status';
+import { getWebinarField, toIsoDate, formatDateDisplay } from './WebinarsTab';
 
 export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) => void }) {
   const { data: students } = useCollection('students');
@@ -38,10 +39,12 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
   }, [reviews]);
 
   const upcomingWebinars = useMemo(() => {
-      const parseD = (d: string) => d ? d.split('.').reverse().join('-') : '';
-      const t = new Date().toISOString().slice(0, 10);
-      let list = webinars.filter(e => parseD(e['Дата']) >= t);
-      list.sort((a,b) => parseD(a['Дата']).localeCompare(parseD(b['Дата'])));
+      const todayStr = new Date().toISOString().slice(0, 10);
+      let list = webinars.filter(e => {
+        const d = toIsoDate(getWebinarField(e, 'date'));
+        return d && d >= todayStr;
+      });
+      list.sort((a,b) => toIsoDate(getWebinarField(a, 'date')).localeCompare(toIsoDate(getWebinarField(b, 'date'))));
       return list.slice(0, 5);
   }, [webinars]);
 
@@ -117,19 +120,32 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
             <h3 className="font-bold text-lg text-gray-800">Ближайшие вебинары</h3>
           </div>
           <div>
-            {upcomingWebinars.map(w => (
-              <div key={w.id} className="px-6 py-4 border-b border-gray-100 flex justify-between items-center hover:bg-gray-50 transition-colors">
-                 <div>
-                   <div className="font-bold text-gray-800">{w['Тема']}</div>
-                   <div className="text-sm text-gray-500 mt-1">{w['Дата']} в {w['Время']} • Ведущий: {w['Ведущий']}</div>
-                 </div>
-                 {w['Ссылка на трансляцию'] && (
-                   <a href={w['Ссылка на трансляцию']} target="_blank" className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                     Войти
-                   </a>
-                 )}
-              </div>
-            ))}
+            {upcomingWebinars.map(w => {
+              const topicStr = getWebinarField(w, 'topic');
+              const dateStr = formatDateDisplay(getWebinarField(w, 'date'));
+              const timeStr = getWebinarField(w, 'time');
+              const hostStr = getWebinarField(w, 'host');
+              const linkStr = getWebinarField(w, 'linkStudents');
+
+              return (
+                <div key={w.id} className="px-6 py-4 border-b border-gray-100 flex justify-between items-center hover:bg-gray-50 transition-colors">
+                   <div>
+                     <div className="font-bold text-gray-800">{topicStr}</div>
+                     <div className="text-sm text-gray-500 mt-1">{dateStr} {timeStr ? `в ${timeStr}` : ''} • Ведущий: {hostStr || '—'}</div>
+                   </div>
+                   {linkStr && (
+                     <a
+                       href={linkStr.startsWith('http') ? linkStr : `https://${linkStr}`}
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       className="bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                     >
+                       Войти
+                     </a>
+                   )}
+                </div>
+              );
+            })}
             {upcomingWebinars.length === 0 && <div className="p-6 text-gray-500">Нет ближайших вебинаров</div>}
           </div>
         </div>
