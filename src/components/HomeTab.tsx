@@ -35,7 +35,7 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
            if (!isNaN(v) && v > 0) { sum+=v; cnt++; }
         });
      });
-     return cnt > 0 ? (sum/cnt).toFixed(2) : '9.8'; // fallback to some value for UI if no data
+     return cnt > 0 ? (sum/cnt).toFixed(2) : '—';
   }, [reviews]);
 
   const upcomingWebinars = useMemo(() => {

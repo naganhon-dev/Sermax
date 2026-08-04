@@ -2,7 +2,7 @@ import { useState, useMemo, Fragment, FormEvent } from 'react';
 import { useCollection, createRecord, updateRecord, deleteRecord } from '../lib/useCollection';
 import { Plus, Trash2, X, ChevronRight, ChevronDown, ChevronUp, Search, Calendar, Clock, UserPlus, Phone, Mail, User, BookOpen, AlertCircle, XCircle, Users, Award, Eye } from 'lucide-react';
 import { canonStatus, ACTIVE_MENTORS, canonMentor } from '../lib/status';
-import { getStudentDebtsWithSettlement } from '../lib/quota';
+import { getStudentDebtsWithSettlement, isStudentFrozenInCurrentMonth, getCurrentMonth, getMonthlyPlan, isCallForPrimaryStudent, isIndividualCall, isCallCounted, parseDate } from '../lib/quota';
 import { auth } from '../firebase';
 import CreateGroupEventModal, { GROUP_EVENT_TYPES } from './CreateGroupEventModal';
 import GroupEventCardModal from './GroupEventCardModal';
@@ -88,6 +88,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
 
   const [activeType, setActiveType] = useState<string | null>(null);
   const [showSummary, setShowSummary] = useState(true);
+  const [showPlanning, setShowPlanning] = useState(true);
   const [showMentorDebts, setShowMentorDebts] = useState(false);
   const [showGerchikDebts, setShowGerchikDebts] = useState(false);
   const [showAll, setShowAll] = useState(false);
@@ -524,6 +525,82 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
   const totalGerchikDebtsCount = useMemo(() => {
     return gerchikDebtsStudents.reduce((sum, item) => sum + item.activeDebts.length, 0);
   }, [gerchikDebtsStudents]);
+
+  const currentCalMonthName = useMemo(() => {
+    return new Date().toLocaleString('ru-RU', { month: 'long', year: 'numeric' });
+  }, []);
+
+  const planningStudents = useMemo(() => {
+    if (!Array.isArray(students)) return [];
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthIdx = now.getMonth();
+
+    return students
+      .filter((s: any) => {
+        const status = canonStatus(s['Статус'] || s.status);
+        if (status !== 'Учится') return false;
+        if (isStudentFrozenInCurrentMonth(s, now)) return false;
+        return true;
+      })
+      .map((s: any) => {
+        const fio = toText(s['ФИО'] || s.fio || s['Имя']).trim() || 'Без имени';
+        const email = toText(s['Почта'] || s.email).trim() || 'Почта не указана';
+        const mentor = toText(s['Ментор'] || s.mentor).trim() || 'Не указан';
+        const pkg = toText(s['Пакет обучения'] || s['Пакет'] || s.package || s['программа'] || s['Программа']).trim() || 'Не указан';
+
+        const studyMonth = getCurrentMonth(s, now);
+        if (!studyMonth || studyMonth < 1) return null;
+
+        const { mentorPlan, gerchikPlan } = getMonthlyPlan(s, studyMonth);
+        if (mentorPlan === 0 && gerchikPlan === 0) return null;
+
+        const callsInCalMonth = (calls || []).filter((c: any) => {
+          if (!isCallForPrimaryStudent(c, s)) return false;
+          if (!isIndividualCall(c)) return false;
+          if (!isCallCounted(c)) return false;
+          const rawDate = c.Дата || c.date || c.created_at || c.createdAt;
+          const d = parseDate(rawDate);
+          if (!d) return false;
+          return d.getFullYear() === currentYear && d.getMonth() === currentMonthIdx;
+        });
+
+        const conductedMentor = callsInCalMonth.filter((c: any) => {
+          const m = c['Ментор'] || c.mentor || c['ментор'] || '';
+          return canonMentor(m) !== 'Герчик';
+        }).length;
+
+        const conductedGerchik = callsInCalMonth.filter((c: any) => {
+          const m = c['Ментор'] || c.mentor || c['ментор'] || '';
+          return canonMentor(m) === 'Герчик';
+        }).length;
+
+        const neededMentor = Math.max(0, mentorPlan - conductedMentor);
+        const neededGerchik = Math.max(0, gerchikPlan - conductedGerchik);
+        const totalNeeded = neededMentor + neededGerchik;
+
+        if (totalNeeded <= 0) return null;
+
+        return {
+          student: s,
+          fio,
+          email,
+          mentor,
+          pkg,
+          studyMonth,
+          mentorPlan,
+          gerchikPlan,
+          conductedMentor,
+          conductedGerchik,
+          neededMentor,
+          neededGerchik,
+          totalNeeded,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => b.totalNeeded - a.totalNeeded || a.fio.localeCompare(b.fio, 'ru'));
+  }, [students, calls]);
 
   const filteredStudents = useMemo(() => {
     let list = studentsInType;
@@ -1017,7 +1094,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteCallItem(groupCall)}
+                                onClick={(e) => { e.stopPropagation(); handleDeleteCallItem(groupCall); }}
                                 className="text-gray-400 hover:text-red-600 p-1 rounded"
                                 title="Удалить созвон"
                               >
@@ -1171,7 +1248,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                                             </button>
                                             <button
                                               type="button"
-                                              onClick={() => handleDeleteCallItem(c)}
+                                              onClick={(e) => { e.stopPropagation(); handleDeleteCallItem(c); }}
                                               className="text-gray-400 hover:text-red-600 p-1 rounded hover:bg-red-50"
                                               title="Удалить этот созвон"
                                             >
@@ -1316,6 +1393,94 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                               </tr>
                             );
                           })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Collapsible Planning Section */}
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <button 
+                  onClick={() => setShowPlanning(!showPlanning)}
+                  className="w-full px-4 py-3 bg-blue-50/50 hover:bg-blue-100/50 border-b border-gray-100 flex justify-between items-center text-sm font-semibold text-gray-800 transition-colors focus:outline-none"
+                >
+                  <span className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-600" />
+                    <span>Планирование созвонов на текущий месяц ({currentCalMonthName})</span>
+                    <span className="text-xs font-normal text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200 font-medium">
+                      Кому ещё нужен созвон: {planningStudents.length} студентов
+                    </span>
+                  </span>
+                  {showPlanning ? <ChevronUp className="w-4 h-4 text-gray-500"/> : <ChevronDown className="w-4 h-4 text-gray-500"/>}
+                </button>
+                {showPlanning && (
+                  <div className="overflow-x-auto max-h-96">
+                    {planningStudents.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">
+                        Все активные студенты выполнили план созвонов на текущий календарный месяц! 🎉
+                      </div>
+                    ) : (
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="bg-gray-50 sticky top-0 shadow-sm z-10">
+                          <tr className="border-b border-gray-200">
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700">Студент</th>
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700">Программа / Пакет</th>
+                            <th className="py-2.5 px-3 border-r border-gray-200 font-semibold text-gray-700">Закреплённый ментор</th>
+                            <th className="py-2.5 px-3 text-center border-r border-gray-200 font-semibold text-gray-700">Месяц обучения</th>
+                            <th className="py-2.5 px-3 text-center border-r border-gray-200 font-semibold text-gray-700">Проведено в текущем месяце</th>
+                            <th className="py-2.5 px-3 font-semibold text-gray-700">Осталось запланировать</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {planningStudents.map((item, idx) => (
+                            <tr key={item.student.id || idx} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                              <td className="py-2.5 px-3 border-r border-gray-200">
+                                <div className="font-semibold text-gray-900">{item.fio}</div>
+                                <div className="text-[11px] text-gray-500 font-normal">{item.email}</div>
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-gray-200 text-gray-800 font-medium">
+                                {item.pkg}
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-gray-200 text-gray-800 font-medium">
+                                {item.mentor}
+                              </td>
+                              <td className="py-2.5 px-3 text-center border-r border-gray-200 text-gray-900 font-bold">
+                                Месяц {item.studyMonth}
+                              </td>
+                              <td className="py-2.5 px-3 text-center border-r border-gray-200 text-gray-800">
+                                <div className="inline-flex flex-col gap-0.5 text-center">
+                                  {item.mentorPlan > 0 && (
+                                    <span className="text-[11px]">
+                                      С ментором: <b>{item.conductedMentor}</b> из <b>{item.mentorPlan}</b>
+                                    </span>
+                                  )}
+                                  {item.gerchikPlan > 0 && (
+                                    <span className="text-[11px] text-purple-900">
+                                      С Герчиком: <b>{item.conductedGerchik}</b> из <b>{item.gerchikPlan}</b>
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="inline-flex items-center gap-1.5 bg-blue-50 text-blue-900 border border-blue-200 px-2.5 py-1 rounded-md font-semibold text-xs">
+                                  <span>Нужно:</span>
+                                  {item.neededMentor > 0 && (
+                                    <span className="text-blue-950">
+                                      {item.neededMentor} {item.neededMentor === 1 ? 'созвон' : 'созвона'} с ментором
+                                    </span>
+                                  )}
+                                  {item.neededMentor > 0 && item.neededGerchik > 0 && <span>, </span>}
+                                  {item.neededGerchik > 0 && (
+                                    <span className="text-purple-900 font-bold">
+                                      {item.neededGerchik} {item.neededGerchik === 1 ? 'созвон' : 'созвона'} с Герчиком
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     )}
@@ -2280,7 +2445,8 @@ function CellPopover({ student, month, currentType, calls, onClose, onOpenUncoun
                           {isUncounted ? <AlertCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
                         </button>
                         <button 
-                          onClick={() => handleDeleteCall(c)}
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteCall(c); }}
                           className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors focus:outline-none"
                           title="Удалить"
                         >

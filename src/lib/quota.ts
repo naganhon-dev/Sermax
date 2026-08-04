@@ -507,6 +507,10 @@ export function getMissedCalls(student: any, calls: any[] = []): MissedCallsResu
   const missedList: MissedCallItem[] = [];
 
   for (let m = 1; m <= lastPastMonth; m++) {
+    if (isMonthFrozen(student, m)) {
+      continue;
+    }
+
     const { mentorPlan, gerchikPlan } = getMonthlyPlan(student, m);
 
     if (mentorPlan > 0) {
@@ -571,5 +575,69 @@ export function getMissedCalls(student: any, calls: any[] = []): MissedCallsResu
     .reduce((sum, item) => sum + item.count, 0);
 
   return { missedMentorTotal, missedGerchikTotal, missedList };
+}
+
+export function countBonusCalls(student: any, calls: any[] = []): number {
+  if (!student || !Array.isArray(calls)) return 0;
+  return calls.filter((c: any) => {
+    if (!isCallForPrimaryStudent(c, student)) return false;
+    if (!isCallCounted(c)) return false;
+    const typeStr = String(c['Тип'] || c.type || '').trim().toLowerCase();
+    return typeStr.includes('бонус');
+  }).length;
+}
+
+export function isStudentFrozenInDateRange(student: any, rangeStart: Date, rangeEnd: Date): boolean {
+  if (!student) return false;
+  const status = canonStatus(student['Статус'] || student.status);
+
+  const fStart = parseDate(student['Заморозка с'] || student.freezeStartDate || student['Дата начала заморозки']);
+  const fEnd = parseDate(student['Заморозка по'] || student.freezeEndDate || student['Дата окончания заморозки']);
+
+  if (status === 'Заморозка') {
+    if (!fStart && !fEnd) return true;
+  }
+
+  if (fStart) {
+    const endBound = fEnd || new Date(2099, 11, 31);
+    if (rangeStart <= endBound && rangeEnd >= fStart) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function isMonthFrozen(student: any, monthNum: number): boolean {
+  if (!student) return false;
+  const status = canonStatus(student['Статус'] || student.status);
+  if (status === 'Заморозка' && !student['Заморозка с'] && !student.freezeStartDate) {
+    return true;
+  }
+
+  const startDate = getStartDate(student);
+  if (!startDate) {
+    return status === 'Заморозка';
+  }
+
+  const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + (monthNum - 1), startDate.getDate());
+  const nextMonthStart = new Date(startDate.getFullYear(), startDate.getMonth() + monthNum, startDate.getDate());
+  const monthEnd = new Date(nextMonthStart.getTime() - 86400000);
+
+  return isStudentFrozenInDateRange(student, monthStart, monthEnd);
+}
+
+export function isStudentFrozenInCurrentMonth(student: any, nowInput?: Date): boolean {
+  if (!student) return false;
+  const status = canonStatus(student['Статус'] || student.status);
+  if (status === 'Заморозка' && !student['Заморозка с'] && !student.freezeStartDate) {
+    return true;
+  }
+
+  const now = nowInput || new Date();
+  const calStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const calEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+  return isStudentFrozenInDateRange(student, calStart, calEnd);
 }
 

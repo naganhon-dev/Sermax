@@ -7,7 +7,7 @@ import Pagination from './Pagination';
 import { auth } from '../firebase';
 import { useResizableColumns } from '../lib/useResizableColumns';
 import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../lib/status';
-import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, getStudentDebtsWithSettlement, StudentDebt } from '../lib/quota';
+import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, getStudentDebtsWithSettlement, StudentDebt, countBonusCalls } from '../lib/quota';
 
 const isDateField = (k: string) => {
   if (!k) return false;
@@ -881,13 +881,13 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                     key={k}
                     type="button"
                     onClick={() => setStatusFilter(statusFilter === k ? '' : k)}
-                    className={`whitespace-nowrap px-2.5 py-1 rounded text-xs transition-colors border ${
+                    className={`whitespace-nowrap px-3 py-1 rounded-lg text-xs transition-all border ${
                       statusFilter === k
-                        ? 'bg-blue-100 border-blue-300 text-blue-800 font-semibold shadow-xs'
-                        : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700 font-medium'
+                        ? 'bg-blue-600 border-blue-600 text-white font-semibold shadow-xs'
+                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700 font-medium'
                     }`}
                   >
-                    <span>{k}:</span> <span className="font-bold">{v}</span>
+                    <span>{k}:</span> <span className="font-bold ml-0.5">{v}</span>
                   </button>
                 ))}
              </div>
@@ -975,13 +975,14 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
 function StatusBadge({ status }: { status: string }) {
   if (!status) return null;
-  let color = 'bg-yellow-100 text-yellow-800';
-  if (status.includes('Учится')) color = 'bg-green-100 text-green-800';
-  if (status.includes('Заморозка')) color = 'bg-blue-100 text-blue-800';
-  if (status.includes('Не приступал')) color = 'bg-gray-200 text-gray-800';
-  if (status.includes('Выпустился') || status.includes('Выпущен')) color = 'bg-purple-100 text-purple-800';
+  let color = 'bg-amber-50 text-amber-800 border-amber-200/80';
+  if (status.includes('Учится')) color = 'bg-emerald-50 text-emerald-800 border-emerald-200/80';
+  if (status.includes('Заморозка')) color = 'bg-sky-50 text-sky-800 border-sky-200/80';
+  if (status.includes('Не приступал')) color = 'bg-slate-100 text-slate-700 border-slate-200/80';
+  if (status.includes('Выпустился') || status.includes('Выпущен')) color = 'bg-purple-50 text-purple-800 border-purple-200/80';
+  if (status.includes('Блокировка') || status.includes('Заблокирован')) color = 'bg-rose-50 text-rose-800 border-rose-200/80';
   
-  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{status}</span>;
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${color} shadow-2xs`}>{status}</span>;
 }
 
 function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
@@ -992,6 +993,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   const { usedMentor, usedGerchik, countedCallsList } = countUsedCalls(data, calls);
   const currentMonthNum = getCurrentMonth(data);
   const { missedMentorTotal, missedGerchikTotal, missedList } = getMissedCalls(data, calls);
+  const bonusCallsTotal = countBonusCalls(data, calls);
   const studentDebts: StudentDebt[] = getStudentDebtsWithSettlement(data, calls);
   const debtMentorTotal = studentDebts.filter(d => d.type === 'mentor' && d.status !== 'settled').length;
   const debtGerchikTotal = studentDebts.filter(d => d.type === 'gerchik' && d.status !== 'settled').length;
@@ -1301,7 +1303,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
     'Анкета 2/3', 'Отправки', 'Звонки', 'Результаты',
     'анкета 2/3', 'отправки', 'звонки', 'результаты',
     'Анкета 2', 'Анкета 3', 'анкета 2', 'анкета 3',
-    'flow_changes'
+    'flow_changes',
+    'Заморозка с', 'Заморозка по', 'Причина заморозки', 'freezeStartDate', 'freezeEndDate'
   ];
 
   const dynamicKeys = allKeys.filter(k => !excludedKeys.includes(k));
@@ -1345,6 +1348,48 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
               Нестандартный статус, выберите правильный
             </p>
           )}
+        </div>
+
+        {/* Период заморозки */}
+        <div className="bg-blue-50/60 p-2.5 rounded-lg border border-blue-200/60 flex flex-col gap-2">
+          <span className="text-xs font-semibold text-blue-900 flex items-center justify-between">
+            <span>❄️ Период заморозки</span>
+            {canonStatus(data['Статус'] || data.status) === 'Заморозка' && (
+              <span className="text-[10px] bg-blue-200 text-blue-900 px-1.5 py-0.5 rounded font-medium">
+                Заморожен
+              </span>
+            )}
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Дата начала</label>
+              <input
+                type="date"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                value={data['Заморозка с'] || data.freezeStartDate || ''}
+                onChange={e => setData({ ...data, 'Заморозка с': e.target.value, freezeStartDate: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Дата окончания</label>
+              <input
+                type="date"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+                value={data['Заморозка по'] || data.freezeEndDate || ''}
+                onChange={e => setData({ ...data, 'Заморозка по': e.target.value, freezeEndDate: e.target.value })}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-medium text-gray-600 mb-0.5">Причина заморозки</label>
+            <input
+              type="text"
+              placeholder="Причина (необязательно)"
+              className="w-full border border-gray-300 rounded px-2 py-1 text-xs bg-white"
+              value={data['Причина заморозки'] || ''}
+              onChange={e => setData({ ...data, 'Причина заморозки': e.target.value })}
+            />
+          </div>
         </div>
 
         {/* Состав группы */}
@@ -1462,6 +1507,10 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                   </span>
                 </div>
               )}
+              <div className="flex justify-between items-center pt-1.5 border-t border-gray-200/60">
+                <span className="text-gray-600 font-medium">Бонусных созвонов:</span>
+                <span className="font-bold text-gray-900">{bonusCallsTotal}</span>
+              </div>
 
               {canonStatus(data['Статус'] || data.status) === 'Учится' && (
                 <div className="pt-2 border-t border-gray-200/60 flex flex-col gap-1.5">

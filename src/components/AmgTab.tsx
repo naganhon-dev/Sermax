@@ -259,7 +259,7 @@ export default function AmgTab() {
 
           {/* С долгами */}
           <div className="flex items-center gap-2 bg-white border border-gray-200 px-3 py-1.5 rounded-lg shadow-sm">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">С долгами:</span>
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Незакрытые слоты:</span>
             <input 
               className="w-12 border border-gray-200 rounded px-1 py-0.5 text-center font-semibold text-red-600 focus:ring-1 focus:ring-red-500 focus:border-red-500 outline-none text-xs" 
               value={slotDebts} 
@@ -301,9 +301,9 @@ export default function AmgTab() {
         <div className="hidden md:block w-px h-5 bg-gray-200"></div>
 
         <div className="flex items-center gap-2 text-xs md:text-sm">
-          <span className="text-gray-500 font-medium">Сумма долгов за месяц:</span>
+          <span className="text-gray-500 font-medium">Незакрытых слотов за месяц:</span>
           <span className="font-bold text-base text-gray-800">
-            {totalDebts.toLocaleString('ru-RU')} ₽
+            {totalDebts.toLocaleString('ru-RU')}
           </span>
         </div>
       </div>      {/* Scrollable tables by section */}
@@ -436,7 +436,7 @@ function AmgSectionTable({
                 <div onMouseDown={e => handleResizeStart(e, 'email')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
               </th>
               <th style={{ width: widths.debts, minWidth: widths.debts, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>
-                <div onClick={() => handleSort('Долги')} className="w-full h-full pr-4">{renderSortIcon('Долги')}Долги</div>
+                <div onClick={() => handleSort('Долги')} className="w-full h-full pr-4">{renderSortIcon('Долги')}Слоты АМГ</div>
                 <div onMouseDown={e => handleResizeStart(e, 'debts')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
               </th>
               <th style={{ width: widths.monthsToTransfer, minWidth: widths.monthsToTransfer, position: 'sticky', top: 0 }} className={`py-2.5 px-4 font-semibold text-center cursor-pointer select-none relative group ${isUnassigned ? 'hover:bg-red-100' : 'hover:bg-gray-100'}`}>

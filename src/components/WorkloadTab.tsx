@@ -70,7 +70,7 @@ export default function WorkloadTab() {
       const studentsCount = monthEntries.length;
 
       const totalDebts = monthEntries.reduce((acc: number, curr: any) => {
-        const val = curr['Долги'] ?? curr['debts'] ?? '';
+        const val = curr['Долг'] ?? curr['Долги'] ?? curr['debts'] ?? '';
         const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
         return acc + parsed;
       }, 0);
@@ -93,7 +93,7 @@ export default function WorkloadTab() {
     if (!isAmgMentor) return null;
 
     const totalDebts = amgEntries.reduce((acc: number, curr: any) => {
-      const val = curr['Долги'] ?? curr['debts'] ?? '';
+      const val = curr['Долг'] ?? curr['Долги'] ?? curr['debts'] ?? '';
       const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
       return acc + parsed;
     }, 0);
@@ -392,13 +392,13 @@ export default function WorkloadTab() {
                 {/* Summary Metrics */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-500 shrink-0">
-                      <Coins className="w-5 h-5" />
+                    <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                      <Layers className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Общий долг АМГ (всего)</p>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Незакрытые слоты АМГ (всего)</p>
                       <p className="text-lg font-bold text-slate-800 mt-0.5">
-                        {amgSummary.totalDebts.toLocaleString('ru-RU')} ₽
+                        {amgSummary.totalDebts.toLocaleString('ru-RU')}
                       </p>
                     </div>
                   </div>
@@ -420,7 +420,7 @@ export default function WorkloadTab() {
                     <div>
                       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Слоты ({amgSummary.currentMonthName})</p>
                       <p className="text-sm font-bold text-slate-800 mt-0.5">
-                        Планово: <span className="text-slate-900 font-extrabold">{amgSummary.plan}</span> | С долгами: <span className="text-red-600 font-extrabold">{amgSummary.debts}</span>
+                        Планово: <span className="text-slate-900 font-extrabold">{amgSummary.plan}</span> | Незакрытые: <span className="text-red-600 font-extrabold">{amgSummary.debts}</span>
                       </p>
                     </div>
                   </div>
@@ -437,9 +437,9 @@ export default function WorkloadTab() {
                         <tr>
                           <th className="py-2 px-4 text-slate-600 font-semibold">Месяц</th>
                           <th className="py-2 px-4 text-slate-600 font-semibold text-center">Студентов</th>
-                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Сумма долгов</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Незакрытые слоты АМГ</th>
                           <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: Планово</th>
-                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: С долгами</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: Незакрытые</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -459,7 +459,7 @@ export default function WorkloadTab() {
                                 {stat.studentsCount > 0 ? stat.studentsCount : <span className="text-slate-300">—</span>}
                               </td>
                               <td className="py-2 px-4 text-center text-slate-800 font-semibold">
-                                {stat.totalDebts > 0 ? `${stat.totalDebts.toLocaleString('ru-RU')} ₽` : <span className="text-slate-300">—</span>}
+                                {stat.totalDebts > 0 ? stat.totalDebts.toLocaleString('ru-RU') : <span className="text-slate-300">—</span>}
                               </td>
                               <td className="py-2 px-4 text-center text-slate-800 font-semibold">
                                 {stat.plan !== '—' && stat.plan !== '' ? stat.plan : <span className="text-slate-300">—</span>}
