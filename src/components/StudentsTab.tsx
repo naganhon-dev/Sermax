@@ -71,6 +71,9 @@ export function sanitizeStudentRecord(record: any): any {
       copy[k] = normalizeToIsoDate(copy[k]);
     }
   }
+  if (!copy['Дата старта обучения']) {
+    copy['Дата старта обучения'] = copy['Старт Эво 2.0'] || copy['Старт Эво'] || copy['Старт Наставничество'] || copy['Дата старта'] || copy['Дата \nстарта курса'] || '';
+  }
   if ('ментор' in copy && copy['ментор']) {
     copy['ментор'] = canonMentor(copy['ментор']);
   }
@@ -500,9 +503,7 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
     'Рынок',
     'Ментор',
     'Группа',
-    'Старт Эво 2.0',
-    'Старт Наставничество',
-    'Дата старта',
+    'Дата старта обучения',
     'Дата выпуска',
   ], []);
 
@@ -587,7 +588,9 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
         const f = String(s['ФИО']||'').toLowerCase();
         const e = String(s['Почта']||'').toLowerCase();
         const p = String(s['Телефон']||'').toLowerCase();
-        if (!f.includes(q) && !e.includes(q) && !p.includes(q)) return false;
+        const extraE = String(s['Дополнительная почта']||'').toLowerCase();
+        const extraP = String(s['Дополнительный телефон']||'').toLowerCase();
+        if (!f.includes(q) && !e.includes(q) && !p.includes(q) && !extraE.includes(q) && !extraP.includes(q)) return false;
       }
 
       // Dynamic Filters (Logical AND)
@@ -987,7 +990,13 @@ function StatusBadge({ status }: { status: string }) {
 
 function StudentPanel({ student, collectionName, allRecords, onClose }: { student: any, collectionName: string, allRecords: any[], onClose: () => void }) {
   const isNew = student._isNew;
-  const [data, setData] = useState(isNew ? { id: crypto.randomUUID() } : { ...student });
+  const [data, setData] = useState(() => {
+    const base = isNew ? { id: crypto.randomUUID() } : { ...student };
+    if (!base['Дата старта обучения']) {
+      base['Дата старта обучения'] = base['Старт Эво 2.0'] || base['Старт Эво'] || base['Старт Наставничество'] || base['Дата старта'] || base['Дата \nстарта курса'] || '';
+    }
+    return base;
+  });
   const { data: calls } = useCollection('calls');
   const plan = getStudentPlan(data);
   const { usedMentor, usedGerchik, countedCallsList } = countUsedCalls(data, calls);
@@ -1125,27 +1134,14 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const save = () => {
-    const currentEvo = normalizeToIsoDate(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '');
-    const currentNast = normalizeToIsoDate(data['Старт Наставничество'] ?? '');
+    const currentStart = normalizeToIsoDate(data['Дата старта обучения'] ?? '');
+    const prevStart = normalizeToIsoDate(student['Дата старта обучения'] ?? student['Старт Эво 2.0'] ?? student['Старт Эво'] ?? student['Дата старта'] ?? '');
 
-    const prevEvo = normalizeToIsoDate(student['Старт Эво 2.0'] ?? student['Старт Эво'] ?? student['Дата старта'] ?? '');
-    const prevNast = normalizeToIsoDate(student['Старт Наставничество'] ?? '');
+    const startChanged = currentStart !== prevStart;
 
-    const evoChanged = currentEvo !== prevEvo;
-    const nastChanged = currentNast !== prevNast;
-
-    if (evoChanged || nastChanged) {
-      const oldParts: string[] = [];
-      const newParts: string[] = [];
-
-      if (evoChanged) {
-        oldParts.push(`Эво 2.0: ${prevEvo || 'не указан'}`);
-        newParts.push(`Эво 2.0: ${currentEvo || 'не указан'}`);
-      }
-      if (nastChanged) {
-        oldParts.push(`Наставничество: ${prevNast || 'не указан'}`);
-        newParts.push(`Наставничество: ${currentNast || 'не указан'}`);
-      }
+    if (startChanged) {
+      const oldParts: string[] = [`Дата старта: ${prevStart || 'не указан'}`];
+      const newParts: string[] = [`Дата старта: ${currentStart || 'не указан'}`];
 
       setFlowForm({
         old: oldParts.join(', '),
@@ -1297,14 +1293,16 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
   };
 
   const excludedKeys = [
-    'ФИО', 'Почта', 'Телефон', 'Статус', 'Пакет обучения', 'Группа', 'группа', 'Комментарий', 'Рынок',
+    'ФИО', 'Почта', 'Дополнительная почта', 'Телефон', 'Дополнительный телефон', 'Дата рождения', 'ДР', 'Дата выпуска', 'Посещения ЖС', 'Статус', 'Пакет обучения', 'Группа', 'группа', 'Комментарий', 'Рынок',
     'ментор', 'Ментор', 'mentor',
-    'Старт Эво 2.0', 'Старт Эво', 'Дата старта', 'Старт Наставничество',
+    'Дата старта обучения', 'Старт Эво 2.0', 'Старт Эво', 'Дата старта', 'Старт Наставничество', 'Дата \nстарта курса',
     'Анкета 2/3', 'Отправки', 'Звонки', 'Результаты',
     'анкета 2/3', 'отправки', 'звонки', 'результаты',
     'Анкета 2', 'Анкета 3', 'анкета 2', 'анкета 3',
     'flow_changes',
-    'Заморозка с', 'Заморозка по', 'Причина заморозки', 'freezeStartDate', 'freezeEndDate'
+    'Заморозка с', 'Заморозка по', 'Причина заморозки', 'freezeStartDate', 'freezeEndDate',
+    'Опыт', 'Алгоритм', 'Статистика', 'Предпочтение по ментору',
+    'Рынок ротация', 'Опыт 2 полугодие', 'Алгоритм 2 полугодие', 'Статистика 2 полугодие'
   ];
 
   const dynamicKeys = allKeys.filter(k => !excludedKeys.includes(k));
@@ -1325,8 +1323,20 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           {renderInput('Почта', true)}
         </div>
         <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Дополнительная почта</label>
+          {renderInput('Дополнительная почта', true)}
+        </div>
+        <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Телефон</label>
           {renderInput('Телефон', true)}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Дополнительный телефон</label>
+          {renderInput('Дополнительный телефон', true)}
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Дата рождения (ДР)</label>
+          {renderInput('Дата рождения', true)}
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Статус</label>
@@ -1393,24 +1403,8 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
         </div>
 
         {/* Состав группы */}
-        <div className="pt-2 border-t border-gray-100 flex flex-col gap-3">
-          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Состав группы</h4>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Пакет обучения</label>
-            <input
-              type="text"
-              list="student-packet-datalist"
-              className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
-              value={data['Пакет обучения'] || ''}
-              onChange={e => setData({ ...data, 'Пакет обучения': e.target.value })}
-              placeholder="Выберите или введите пакет"
-            />
-            <datalist id="student-packet-datalist">
-              {uniquePackages.map(p => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </datalist>
-          </div>
+        <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
+          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Группа и ментор</h4>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Группа</label>
             <input
@@ -1457,30 +1451,81 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
               ))}
             </datalist>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Посещения ЖС</label>
+            {renderInput('Посещения ЖС', true)}
+          </div>
+        </div>
+
+        {/* Параметры подбора ментора (Эволюция) */}
+        <div className="pt-2 border-t border-gray-100 flex flex-col gap-3">
+          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Параметры подбора ментора</h4>
+          
+          <div className="bg-gray-50/50 rounded-lg p-2.5 border border-gray-100 flex flex-col gap-2">
+            <span className="font-medium text-[11px] text-gray-500 uppercase tracking-wider">Параметры 1 полугодия</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Рынок</label>
+                {renderInput('Рынок', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Опыт</label>
+                {renderInput('Опыт', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Алгоритм</label>
+                {renderInput('Алгоритм', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Статистика</label>
+                {renderInput('Статистика', true)}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium text-gray-500 uppercase tracking-wider mb-1">Предпочтение по ментору</label>
+            {renderInput('Предпочтение по ментору', true)}
+          </div>
+
+          <div className="bg-gray-50/50 rounded-lg p-2.5 border border-gray-100 flex flex-col gap-2">
+            <span className="font-medium text-[11px] text-gray-500 uppercase tracking-wider">Параметры 2 полугодия</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Рынок ротация</label>
+                {renderInput('Рынок ротация', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Опыт 2 полугодие</label>
+                {renderInput('Опыт 2 полугодие', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Алгоритм 2 полугодие</label>
+                {renderInput('Алгоритм 2 полугодие', true)}
+              </div>
+              <div>
+                <label className="block text-[10px] font-medium text-gray-400 mb-0.5">Статистика 2 полугодие</label>
+                {renderInput('Статистика 2 полугодие', true)}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Даты старта */}
         <div className="pt-2 border-t border-gray-100 flex flex-col gap-2">
-          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Даты старта</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Старт Эво 2.0</label>
-              <input
-                type="date"
-                className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
-                value={normalizeToIsoDate(data['Старт Эво 2.0'] ?? data['Старт Эво'] ?? data['Дата старта'] ?? '')}
-                onChange={e => setData({ ...data, 'Старт Эво 2.0': e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Старт Наставничество</label>
-              <input
-                type="date"
-                className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
-                value={normalizeToIsoDate(data['Старт Наставничество'] || '')}
-                onChange={e => setData({ ...data, 'Старт Наставничество': e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
-              />
-            </div>
+          <h4 className="font-semibold text-xs text-gray-500 uppercase tracking-wider">Дата старта и выпуска</h4>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Дата старта обучения</label>
+            <input
+              type="date"
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+              value={normalizeToIsoDate(data['Дата старта обучения'] || '')}
+              onChange={e => setData({ ...data, 'Дата старта обучения': e.target.value ? normalizeToIsoDate(e.target.value) : '' })}
+            />
+          </div>
+          <div className="mt-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Дата выпуска</label>
+            {renderInput('Дата выпуска', true)}
           </div>
         </div>
 
@@ -1636,10 +1681,6 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
           )}
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Рынок</label>
-          {renderInput('Рынок', true)}
-        </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Комментарий</label>
           {renderInput('Комментарий', true)}

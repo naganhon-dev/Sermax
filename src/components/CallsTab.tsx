@@ -94,6 +94,8 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState('');
   const [leadProgramFilter, setLeadProgramFilter] = useState('Все');
+  const [selectedCallProgram, setSelectedCallProgram] = useState('Все');
+  const [selectedStreamDate, setSelectedStreamDate] = useState('Все');
   const [selectedCell, setSelectedCell] = useState<{ student: any; month: number } | null>(null);
 
   // Modals for Lead Management
@@ -342,6 +344,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       Программа?: string;
       Пакет?: string;
       Статус?: string;
+      startDate?: string;
       calls: any[] 
     }>();
     
@@ -352,14 +355,17 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       if (!fio && !email) return;
       const key = `${email || 'no-email'}::${fio || 'no-fio'}`;
       if (!studentMap.has(key)) {
+        const prog = toText(s['Программа'] || s['Пакет обучения'] || s['Пакет'] || s['программа'] || s['пакет']).trim() || 'Без программы';
+        const startDt = toText(s['Дата старта обучения'] || s['Старт Эво 2.0'] || s['Старт Эво'] || s['Дата старта'] || s['Дата \nстарта курса']).trim() || '';
         studentMap.set(key, {
           ФИО: fio || 'Не указано',
           Почта: email,
           Группа: toText(s['Группа'] || s['группа']),
           Секция: toText(s['Секция'] || s['секция']),
-          Программа: toText(s['Программа'] || s['Пакет'] || s['программа'] || s['пакет']),
+          Программа: prog,
           Пакет: toText(s['Пакет'] || s['пакет'] || s['Программа'] || s['программа']),
           Статус: canonStatus(s['Статус'] || s['статус'] || 'Учится'),
+          startDate: startDt,
           calls: []
         });
       }
@@ -602,8 +608,32 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       .sort((a, b) => b.totalNeeded - a.totalNeeded || a.fio.localeCompare(b.fio, 'ru'));
   }, [students, calls]);
 
+  const availableCallPrograms = useMemo(() => {
+    const set = new Set<string>();
+    studentsInType.forEach(st => {
+      if (st.Программа) set.add(st.Программа);
+    });
+    return Array.from(set).sort();
+  }, [studentsInType]);
+
+  const availableStreamsForProgram = useMemo(() => {
+    const set = new Set<string>();
+    studentsInType.forEach(st => {
+      if (selectedCallProgram === 'Все' || st.Программа === selectedCallProgram) {
+        if (st.startDate) set.add(st.startDate);
+      }
+    });
+    return Array.from(set).sort();
+  }, [studentsInType, selectedCallProgram]);
+
   const filteredStudents = useMemo(() => {
     let list = studentsInType;
+    if (selectedCallProgram !== 'Все') {
+      list = list.filter(st => st.Программа === selectedCallProgram);
+    }
+    if (selectedStreamDate !== 'Все') {
+      list = list.filter(st => st.startDate === selectedStreamDate);
+    }
     if (!showAll) {
       list = list.filter(st => st.calls.length > 0);
     }
@@ -617,7 +647,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
       );
     }
     return list;
-  }, [studentsInType, showAll, search]);
+  }, [studentsInType, selectedCallProgram, selectedStreamDate, showAll, search]);
 
   const groupedStudents = useMemo(() => {
     const groups: Record<string, typeof filteredStudents> = {};
@@ -962,15 +992,42 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
             </button>
 
             {currentType !== 'Созвоны для дожатия' && (
-              <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
-                <input 
-                  type="checkbox" 
-                  checked={showAll} 
-                  onChange={e => setShowAll(e.target.checked)} 
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                />
-                <span className="text-xs">Показать всех</span>
-              </label>
+              <>
+                <select
+                  value={selectedCallProgram}
+                  onChange={e => {
+                    setSelectedCallProgram(e.target.value);
+                    setSelectedStreamDate('Все');
+                  }}
+                  className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-gray-700"
+                >
+                  <option value="Все">Все программы</option>
+                  {availableCallPrograms.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={selectedStreamDate}
+                  onChange={e => setSelectedStreamDate(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-gray-700"
+                >
+                  <option value="Все">Все потоки (даты старта)</option>
+                  {availableStreamsForProgram.map(d => (
+                    <option key={d} value={d}>Поток: {d}</option>
+                  ))}
+                </select>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={showAll} 
+                    onChange={e => setShowAll(e.target.checked)} 
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span className="text-xs">Показать всех</span>
+                </label>
+              </>
             )}
 
             {currentType === 'Созвоны для дожатия' && (

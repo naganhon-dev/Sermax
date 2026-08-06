@@ -12,26 +12,129 @@ const TARGET_COLLECTIONS = [
   { value: 'students', label: 'students (Студенты)' },
   { value: 'graduates', label: 'graduates (Выпускники)' },
   { value: 'blacklist', label: 'blacklist (Черный список)' },
+  { value: 'leads', label: 'leads (Лиды)' },
   { value: 'calls', label: 'calls (Созвоны)' },
   { value: 'call_groups', label: 'call_groups (Группы созвонов)' },
   { value: 'call_scores', label: 'call_scores (Оценки созвонов)' },
+  { value: 'call_categories', label: 'call_categories (Категории созвонов)' },
   { value: 'os_reviews', label: 'os_reviews (Отзывы ОС)' },
   { value: 'activities', label: 'activities (Активности)' },
   { value: 'webinar_events', label: 'webinar_events (Вебинары)' },
   { value: 'webinar_themes', label: 'webinar_themes (Темы вебинаров)' },
   { value: 'amg_entries', label: 'amg_entries (AMG записи)' },
-  { value: 'amg_meta', label: 'amg_meta (AMG мета)' }
+  { value: 'amg_meta', label: 'amg_meta (AMG мета)' },
+  { value: 'archive', label: 'archive (Архив)' },
+  { value: 'logs', label: 'logs (Логи)' },
+  { value: 'trash', label: 'trash (Корзина)' }
 ];
 
 export default function ImportScreen({ onDone }: { onDone: () => void }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [log, setLog] = useState<string[]>([]);
-  const [importMode, setImportMode] = useState<'backup' | 'single'>('backup');
+  const [importMode, setImportMode] = useState<'backup' | 'single' | 'clear'>('backup');
   const [selectedCol, setSelectedCol] = useState('students');
   const [clearBeforeImport, setClearBeforeImport] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
 
   const addLog = (msg: string) => setLog(l => [...l, msg]);
+
+  const handleClearAllData = async () => {
+    if (clearConfirmText.trim() !== 'УДАЛИТЬ') {
+      alert('Пожалуйста, введите слово "УДАЛИТЬ" для подтверждения.');
+      return;
+    }
+
+    setLoading(true);
+    setProgress(0);
+    setLog([]);
+
+    const collectionsToClean = [
+      'students',
+      'calls',
+      'amg_entries',
+      'amg_meta',
+      'call_scores',
+      'os_reviews',
+      'activities',
+      'webinar_events',
+      'webinar_themes',
+      'archive',
+      'logs',
+      'trash',
+      'graduates',
+      'blacklist',
+      'leads',
+      'call_groups',
+      'call_categories'
+    ];
+
+    let totalDeleted = 0;
+
+    try {
+      for (let i = 0; i < collectionsToClean.length; i++) {
+        const colName = collectionsToClean[i];
+        addLog(`Очистка коллекции: ${colName}...`);
+        
+        let deletedInCol = 0;
+        const querySnapshot = await getDocs(collection(db, colName));
+
+        if (!querySnapshot.empty) {
+          let batch = writeBatch(db);
+          let batchCount = 0;
+
+          for (const docSnap of querySnapshot.docs) {
+            if (colName === 'archive') {
+              try {
+                const chunksSnap = await getDocs(collection(db, 'archive', docSnap.id, 'chunks'));
+                for (const chunkSnap of chunksSnap.docs) {
+                  batch.delete(chunkSnap.ref);
+                  batchCount++;
+                  deletedInCol++;
+                  if (batchCount >= 400) {
+                    await batch.commit();
+                    batch = writeBatch(db);
+                    batchCount = 0;
+                  }
+                }
+              } catch (e) {
+                // ignore
+              }
+            }
+
+            batch.delete(docSnap.ref);
+            batchCount++;
+            deletedInCol++;
+
+            if (batchCount >= 400) {
+              await batch.commit();
+              batch = writeBatch(db);
+              batchCount = 0;
+            }
+          }
+
+          if (batchCount > 0) {
+            await batch.commit();
+          }
+        }
+
+        totalDeleted += deletedInCol;
+        addLog(`  -> Удалено документов в ${colName}: ${deletedInCol}`);
+        setProgress(Math.round(((i + 1) / collectionsToClean.length) * 100));
+      }
+
+      addLog(`=== ВСЕ ДАННЫЕ УСПЕШНО УДАЛЕНЫ! Всего удалено документов: ${totalDeleted} ===`);
+      setProgress(100);
+
+      setTimeout(() => {
+        onDone();
+      }, 2500);
+
+    } catch (e: any) {
+      alert('Ошибка при очистке данных: ' + e.message);
+      setLoading(false);
+    }
+  };
 
   const handleFilesBackup = async (files: FileList) => {
     setLoading(true);
@@ -302,6 +405,16 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
           >
             Произвольный JSON
           </button>
+          <button
+            onClick={() => setImportMode('clear')}
+            className={`flex-1 py-2 text-center font-medium text-sm border-b-2 transition-all ${
+              importMode === 'clear'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Очистка базы
+          </button>
         </div>
       )}
 
@@ -309,7 +422,7 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
         <div className="w-full max-w-md font-sans">
           <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden">
             <div 
-              className="h-full bg-blue-600 transition-all duration-300"
+              className="h-full bg-red-600 transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -346,7 +459,7 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
                 />
               </label>
             </div>
-          ) : (
+          ) : importMode === 'single' ? (
             <div className="flex flex-col gap-5">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Целевая коллекция</label>
@@ -399,6 +512,41 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
                   />
                 </label>
               </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-5">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-900">
+                <h3 className="font-bold text-base text-red-800 mb-1">Полная очистка всех данных Firestore</h3>
+                <p className="text-xs text-red-700 leading-relaxed">
+                  Это действие удалит абсолютно все данные во всех коллекциях (<code className="bg-red-100 px-1 py-0.5 rounded">students</code>, <code className="bg-red-100 px-1 py-0.5 rounded">calls</code>, <code className="bg-red-100 px-1 py-0.5 rounded">amg_entries</code>, <code className="bg-red-100 px-1 py-0.5 rounded">archive</code> и др.). Убедитесь, что вы предварительно сделали экспорт бэкапа!
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-gray-700">
+                  Для подтверждения введите слово <span className="text-red-600 font-bold">УДАЛИТЬ</span>:
+                </label>
+                <input
+                  type="text"
+                  placeholder="УДАЛИТЬ"
+                  value={clearConfirmText}
+                  onChange={(e) => setClearConfirmText(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm uppercase font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={clearConfirmText.trim() !== 'УДАЛИТЬ'}
+                onClick={handleClearAllData}
+                className={`w-full py-3 rounded-lg font-semibold text-sm transition-all shadow-sm ${
+                  clearConfirmText.trim() === 'УДАЛИТЬ'
+                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer shadow-red-200'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                Очистить все данные в базе
+              </button>
             </div>
           )}
         </div>

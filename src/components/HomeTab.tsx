@@ -55,7 +55,9 @@ export default function HomeTab({ onStudentClick }: { onStudentClick: (s: any) =
       const f = String(s['ФИО']||'').toLowerCase();
       const e = String(s['Почта']||'').toLowerCase();
       const p = String(s['Телефон']||'').toLowerCase();
-      return f.includes(q) || e.includes(q) || p.includes(q);
+      const extraE = String(s['Дополнительная почта']||'').toLowerCase();
+      const extraP = String(s['Дополнительный телефон']||'').toLowerCase();
+      return f.includes(q) || e.includes(q) || p.includes(q) || extraE.includes(q) || extraP.includes(q);
     }).slice(0, 5);
   }, [search, students]);
 

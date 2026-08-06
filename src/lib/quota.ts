@@ -94,8 +94,9 @@ export function parseDate(val: any): Date | null {
 export function getStartDate(student: any): Date | null {
   if (!student) return null;
 
-  // 1. Check "Дата \nстарта курса" or variations
+  // 1. Check "Дата старта обучения" or legacy variations
   const rawDirect =
+    student['Дата старта обучения'] ??
     student['Дата \nстарта курса'] ??
     student['Дата\nстарта курса'] ??
     student['Дата старта курса'] ??
