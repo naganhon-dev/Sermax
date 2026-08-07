@@ -39,6 +39,124 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
 
   const addLog = (msg: string) => setLog(l => [...l, msg]);
 
+  const isTargetDuplicate = (val: any): boolean => {
+    if (!val) return false;
+
+    // 1. If string
+    if (typeof val === 'string') {
+      if (val === '2026-08-06T09:29:10.055981Z') return true;
+      if (val.startsWith('2026-08-06T09:29:10')) return true;
+    }
+
+    // 2. If object (Timestamp or generic date object)
+    if (typeof val === 'object') {
+      if (typeof val.toDate === 'function') {
+        try {
+          const d = val.toDate();
+          if (d instanceof Date && !isNaN(d.getTime())) {
+            const iso = d.toISOString();
+            if (iso.startsWith('2026-08-06T09:29:10')) return true;
+          }
+        } catch (e) {}
+      }
+
+      let seconds: number | null = null;
+      if (val.seconds !== undefined) {
+        seconds = Number(val.seconds);
+      } else if (val._seconds !== undefined) {
+        seconds = Number(val._seconds);
+      }
+
+      if (seconds !== null) {
+        if (seconds === 1786008550) return true;
+        try {
+          const d = new Date(seconds * 1000);
+          const iso = d.toISOString();
+          if (iso.startsWith('2026-08-06T09:29:10')) return true;
+        } catch (e) {}
+      }
+
+      // Fallback for custom objects or direct dates
+      try {
+        const d = new Date(val);
+        if (!isNaN(d.getTime())) {
+          const iso = d.toISOString();
+          if (iso.startsWith('2026-08-06T09:29:10')) return true;
+        }
+      } catch (e) {}
+    }
+
+    return false;
+  };
+
+  const handleTargetedCleanup = async () => {
+    try {
+      // Fetch documents first to analyze
+      const querySnapshot = await getDocs(collection(db, 'students'));
+      
+      const duplicates = querySnapshot.docs.filter(docSnap => {
+        const data = docSnap.data();
+        const val = data.created_at || data.createdAt;
+        return isTargetDuplicate(val);
+      });
+
+      if (duplicates.length === 0) {
+        alert("Поиск завершен. Найдено 0 документов, соответствующих условию. Очистка не требуется.");
+        return;
+      }
+
+      // Ask for confirmation showing the exact count
+      const confirmed = confirm(
+        `Найдено документов для удаления: ${duplicates.length} (ожидалось 123).\n\n` +
+        `Вы действительно хотите удалить эти документы? Это действие необратимо и сотрет только старую дублирующую партию.`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      // Switch to progress logger screen
+      setLoading(true);
+      setProgress(0);
+      setLog([]);
+      addLog("Запуск точечной очистки дубликатов...");
+      addLog(`Начало удаления ${duplicates.length} документов...`);
+
+      let batch = writeBatch(db);
+      let batchCount = 0;
+      let deletedCount = 0;
+
+      for (const docSnap of duplicates) {
+        batch.delete(docSnap.ref);
+        batchCount++;
+        deletedCount++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+          setProgress(Math.round((deletedCount / duplicates.length) * 100));
+          addLog(`Удалено: ${deletedCount}/${duplicates.length}`);
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+
+      setProgress(100);
+      addLog(`Точечная очистка успешно завершена! Удалено документов: ${deletedCount}`);
+      
+      setTimeout(() => {
+        onDone();
+      }, 2500);
+
+    } catch (e: any) {
+      alert("Ошибка при точечной очистке: " + e.message);
+      setLoading(false);
+    }
+  };
+
   const handleClearAllData = async () => {
     if (clearConfirmText.trim() !== 'УДАЛИТЬ') {
       alert('Пожалуйста, введите слово "УДАЛИТЬ" для подтверждения.');
@@ -514,39 +632,57 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
               </div>
             </div>
           ) : (
-            <div className="flex flex-col gap-5">
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-900">
+            <div className="flex flex-col gap-6">
+              {/* Точечная очистка */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-900 shadow-sm">
+                <h3 className="font-bold text-base text-amber-800 mb-1">Точечная очистка: удаление дубликатов</h3>
+                <p className="text-xs text-amber-700 leading-relaxed mb-4">
+                  Эта функция найдет и удалит в коллекции <code className="bg-amber-100 px-1 py-0.5 rounded">students</code> только те документы, у которых поле <code className="bg-amber-100 px-1 py-0.5 rounded">created_at</code> строго равно <code className="bg-amber-100 px-1 py-0.5 rounded">"2026-08-06T09:29:10.055981Z"</code> (устаревшая партия из 123 карточек). Актуальные данные с другими датами затронуты не будут.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleTargetedCleanup}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm shadow-amber-200 cursor-pointer"
+                >
+                  Найти и удалить дубликаты (123 карточки)
+                </button>
+              </div>
+
+              <div className="h-px bg-gray-200 my-1" />
+
+              {/* Полная очистка */}
+              <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-red-900 shadow-sm">
                 <h3 className="font-bold text-base text-red-800 mb-1">Полная очистка всех данных Firestore</h3>
-                <p className="text-xs text-red-700 leading-relaxed">
+                <p className="text-xs text-red-700 leading-relaxed mb-4">
                   Это действие удалит абсолютно все данные во всех коллекциях (<code className="bg-red-100 px-1 py-0.5 rounded">students</code>, <code className="bg-red-100 px-1 py-0.5 rounded">calls</code>, <code className="bg-red-100 px-1 py-0.5 rounded">amg_entries</code>, <code className="bg-red-100 px-1 py-0.5 rounded">archive</code> и др.). Убедитесь, что вы предварительно сделали экспорт бэкапа!
                 </p>
-              </div>
 
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-gray-700">
-                  Для подтверждения введите слово <span className="text-red-600 font-bold">УДАЛИТЬ</span>:
-                </label>
-                <input
-                  type="text"
-                  placeholder="УДАЛИТЬ"
-                  value={clearConfirmText}
-                  onChange={(e) => setClearConfirmText(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm uppercase font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
+                <div className="flex flex-col gap-2 mb-4">
+                  <label className="text-xs font-semibold text-gray-700">
+                    Для подтверждения введите слово <span className="text-red-600 font-bold">УДАЛИТЬ</span>:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="УДАЛИТЬ"
+                    value={clearConfirmText}
+                    onChange={(e) => setClearConfirmText(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg p-2 text-sm uppercase font-mono tracking-widest bg-white focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-800"
+                  />
+                </div>
 
-              <button
-                type="button"
-                disabled={clearConfirmText.trim() !== 'УДАЛИТЬ'}
-                onClick={handleClearAllData}
-                className={`w-full py-3 rounded-lg font-semibold text-sm transition-all shadow-sm ${
-                  clearConfirmText.trim() === 'УДАЛИТЬ'
-                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer shadow-red-200'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                Очистить все данные в базе
-              </button>
+                <button
+                  type="button"
+                  disabled={clearConfirmText.trim() !== 'УДАЛИТЬ'}
+                  onClick={handleClearAllData}
+                  className={`w-full py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm ${
+                    clearConfirmText.trim() === 'УДАЛИТЬ'
+                      ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer shadow-red-200'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Очистить все данные в базе
+                </button>
+              </div>
             </div>
           )}
         </div>

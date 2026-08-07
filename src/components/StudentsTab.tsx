@@ -494,6 +494,55 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [dynamicFilters, setDynamicFilters] = useState<DynamicFilterRow[]>([]);
 
+  // Групповое выделение студентов
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatusToApply, setBulkStatusToApply] = useState('');
+
+  // Сброс выделения при изменении фильтров, поиска или вкладки
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkStatusToApply('');
+  }, [collectionName, statusFilter, search, dynamicFilters]);
+
+  const handleApplyBulkStatus = async () => {
+    if (!bulkStatusToApply || selectedIds.size === 0) return;
+
+    const count = selectedIds.size;
+    const confirmMsg = `Изменить статус у ${count} студентов на "${bulkStatusToApply}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    const selectedStudents = students.filter((s: any) => selectedIds.has(s.id));
+
+    for (const s of selectedStudents) {
+      const oldStatus = canonStatus(s['Статус']) || '—';
+      if (oldStatus === bulkStatusToApply) continue;
+
+      const updatedStudent = {
+        ...s,
+        'Статус': bulkStatusToApply
+      };
+
+      await createRecord('logs', {
+        timestamp: new Date().toISOString(),
+        author: auth.currentUser?.email || 'Неизвестный',
+        studentId: s.id,
+        studentFio: String(s['ФИО'] || s['fio'] || 'Без ФИО').trim(),
+        changes: [
+          {
+            field: 'Статус (Групповое изменение)',
+            oldValue: oldStatus,
+            newValue: bulkStatusToApply
+          }
+        ]
+      });
+
+      await updateRecord(collectionName, s.id, updatedStudent);
+    }
+
+    setSelectedIds(new Set());
+    setBulkStatusToApply('');
+  };
+
   const { handleSort, renderSortIcon, sortData } = useSort();
 
   const ALLOWED_FILTER_FIELDS = useMemo(() => [
@@ -900,6 +949,22 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
              <table className="text-left border-collapse text-sm" style={{ tableLayout: 'fixed', width: 'max-content', minWidth: '100%' }}>
                <thead>
                  <tr className="border-b-2 border-gray-200">
+                   <th style={{ width: 40, minWidth: 40, position: 'sticky', top: 0 }} className="py-2 px-2 bg-white z-10 relative text-center">
+                     <input
+                       type="checkbox"
+                       checked={paginatedData.length > 0 && paginatedData.every((s: any) => selectedIds.has(s.id))}
+                       onChange={(e) => {
+                         const newSelected = new Set(selectedIds);
+                         if (e.target.checked) {
+                           paginatedData.forEach((s: any) => newSelected.add(s.id));
+                         } else {
+                           paginatedData.forEach((s: any) => newSelected.delete(s.id));
+                         }
+                         setSelectedIds(newSelected);
+                       }}
+                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                     />
+                   </th>
                    <th style={{ width: widths.fio, minWidth: widths.fio, position: 'sticky', top: 0 }} className="py-2 px-2 cursor-pointer hover:bg-gray-100 select-none bg-white z-10 relative group">
                      <div onClick={() => handleSort('ФИО')} className="w-full h-full pr-4">{renderSortIcon('ФИО')}ФИО</div>
                      <div onMouseDown={e => handleResizeStart(e, 'fio')} onClick={e => e.stopPropagation()} className="absolute right-0 top-0 bottom-0 w-1.5 bg-transparent hover:bg-blue-400 active:bg-blue-600 cursor-col-resize z-20" />
@@ -937,6 +1002,22 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
                <tbody>
                  {paginatedData.map((s: any) => (
                    <tr key={s.id} onClick={() => setSelectedStudent(s)} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer">
+                     <td className="py-1.5 px-2 text-center" style={{ width: 40, maxWidth: 40 }} onClick={(e) => e.stopPropagation()}>
+                       <input
+                         type="checkbox"
+                         checked={selectedIds.has(s.id)}
+                         onChange={(e) => {
+                           const newSelected = new Set(selectedIds);
+                           if (e.target.checked) {
+                             newSelected.add(s.id);
+                           } else {
+                             newSelected.delete(s.id);
+                           }
+                           setSelectedIds(newSelected);
+                         }}
+                         className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                       />
+                     </td>
                      <td className="py-1.5 px-2 relative truncate animate-fade-in" style={{ width: widths.fio, maxWidth: widths.fio, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={s['ФИО']}>
                         {s._color && <div className="absolute left-0 top-0 bottom-0 w-1" style={{backgroundColor: s._color}} />}
                         {s['ФИО']}
@@ -968,6 +1049,51 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
             grandTotal={students.length}
           />
        </div>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-16 left-1/2 transform -translate-x-1/2 z-40 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+            <span className="text-sm font-medium">Выбрано: <strong className="text-blue-400 text-base">{selectedIds.size}</strong></span>
+          </div>
+          
+          <div className="h-5 w-px bg-slate-700" />
+          
+          <div className="flex items-center gap-2">
+            <select
+              value={bulkStatusToApply}
+              onChange={(e) => setBulkStatusToApply(e.target.value)}
+              className="bg-slate-800 border border-slate-700 text-white rounded px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium cursor-pointer"
+            >
+              <option value="">Выберите статус...</option>
+              {STANDARD_STATUSES.map(st => (
+                <option key={st} value={st} className="bg-slate-900 text-white">{st}</option>
+              ))}
+            </select>
+            
+            <button
+              onClick={handleApplyBulkStatus}
+              disabled={!bulkStatusToApply}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors ${
+                bulkStatusToApply 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+              }`}
+            >
+              Изменить статус
+            </button>
+          </div>
+
+          <div className="h-5 w-px bg-slate-700" />
+
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="text-xs text-slate-400 hover:text-white font-medium transition-colors"
+          >
+            Отменить выбор
+          </button>
+        </div>
+      )}
 
       {selectedStudent && (
         <StudentPanel student={selectedStudent} collectionName={collectionName} allRecords={students} onClose={() => setSelectedStudent(null)} />
