@@ -157,6 +157,73 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
     }
   };
 
+  const handleTargetedCallsCleanup = async () => {
+    try {
+      // Fetch documents first to analyze
+      const querySnapshot = await getDocs(collection(db, 'calls'));
+      
+      const targetDocs = querySnapshot.docs.filter(docSnap => {
+        const data = docSnap.data();
+        return data.is_group === true;
+      });
+
+      if (targetDocs.length === 0) {
+        alert("Поиск завершен. Найдено 0 документов, соответствующих условию. Очистка не требуется.");
+        return;
+      }
+
+      // Ask for confirmation showing the exact count
+      const confirmed = confirm(
+        `Найдено плоских групповых созвонов для удаления: ${targetDocs.length} (ожидалось 601).\n\n` +
+        `Вы действительно хотите удалить эти документы? Это действие необратимо и сотрет только плоские групповые записи с is_group === true. Индивидуальные созвоны не пострадают.`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      // Switch to progress logger screen
+      setLoading(true);
+      setProgress(0);
+      setLog([]);
+      addLog("Запуск точечного удаления плоских групповых созвонов...");
+      addLog(`Начало удаления ${targetDocs.length} документов...`);
+
+      let batch = writeBatch(db);
+      let batchCount = 0;
+      let deletedCount = 0;
+
+      for (const docSnap of targetDocs) {
+        batch.delete(docSnap.ref);
+        batchCount++;
+        deletedCount++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+          setProgress(Math.round((deletedCount / targetDocs.length) * 100));
+          addLog(`Удалено: ${deletedCount}/${targetDocs.length}`);
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
+      }
+
+      setProgress(100);
+      addLog(`Точечная очистка групповых созвонов успешно завершена! Удалено документов: ${deletedCount}`);
+      
+      setTimeout(() => {
+        onDone();
+      }, 2500);
+
+    } catch (e: any) {
+      alert("Ошибка при точечной очистке созвонов: " + e.message);
+      setLoading(false);
+    }
+  };
+
   const handleClearAllData = async () => {
     if (clearConfirmText.trim() !== 'УДАЛИТЬ') {
       alert('Пожалуйста, введите слово "УДАЛИТЬ" для подтверждения.');
@@ -645,6 +712,21 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
                   className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm shadow-amber-200 cursor-pointer"
                 >
                   Найти и удалить дубликаты (123 карточки)
+                </button>
+              </div>
+
+              {/* Точечная очистка групповых созвонов */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-900 shadow-sm">
+                <h3 className="font-bold text-base text-amber-800 mb-1">Точечная очистка: плоские групповые созвоны</h3>
+                <p className="text-xs text-amber-700 leading-relaxed mb-4">
+                  Эта функция найдет и удалит в коллекции <code className="bg-amber-100 px-1 py-0.5 rounded">calls</code> только те документы, у которых поле <code className="bg-amber-100 px-1 py-0.5 rounded">is_group</code> строго равно <code className="bg-amber-100 px-1 py-0.5 rounded">true</code> (ожидается 601 запись). Индивидуальные созвоны затронуты не будут.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleTargetedCallsCleanup}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm shadow-amber-200 cursor-pointer"
+                >
+                  Найти и удалить плоские групповые (601 запись)
                 </button>
               </div>
 
