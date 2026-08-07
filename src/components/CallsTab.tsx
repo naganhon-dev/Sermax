@@ -379,7 +379,7 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
 
       if (isGroup) {
         // Group calls processing
-        if (cType !== currentType && !isGroupCallType(currentType)) return;
+        if (cType !== currentType) return;
 
         const participants: any[] = c.participants || [];
         participants.forEach(p => {
@@ -1105,14 +1105,14 @@ export default function CallsTab({ onSelectStudent }: { onSelectStudent?: (stude
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {calls.filter(c => (c.is_group === true || Array.isArray(c.participants)) && (c.Тип === currentType || isGroupCallType(c.Тип))).length === 0 ? (
+                    {calls.filter(c => (c.is_group === true || Array.isArray(c.participants)) && c.Тип === currentType).length === 0 ? (
                       <tr>
                         <td colSpan={6} className="py-6 text-center text-gray-400">
                           Групповых событий не найдено. Нажмите "+ Групповое событие", чтобы создать первое.
                         </td>
                       </tr>
                     ) : (
-                      calls.filter(c => (c.is_group === true || Array.isArray(c.participants)) && (c.Тип === currentType || isGroupCallType(c.Тип))).map(groupCall => {
+                      calls.filter(c => (c.is_group === true || Array.isArray(c.participants)) && c.Тип === currentType).map(groupCall => {
                         const parts: any[] = groupCall.participants || [];
                         const presentCount = parts.filter(p => p.present === true).length;
                         const absentCount = parts.filter(p => p.present === false).length;
