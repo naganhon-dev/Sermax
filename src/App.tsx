@@ -8,10 +8,12 @@ import { isFirebaseConfigured, auth, logout } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
+import TwoFactorScreen from './components/TwoFactorScreen';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [is2faVerified, setIs2faVerified] = useState(false);
 
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) {
@@ -20,10 +22,24 @@ export default function App() {
     }
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      if (u) {
+        const verifiedInSession = sessionStorage.getItem(`2fa_verified_${u.uid}`) === 'true';
+        setIs2faVerified(verifiedInSession);
+      } else {
+        setIs2faVerified(false);
+      }
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
+
+  const handleLogout = async () => {
+    if (user) {
+      sessionStorage.removeItem(`2fa_verified_${user.uid}`);
+    }
+    setIs2faVerified(false);
+    await logout();
+  };
 
   if (!isFirebaseConfigured) {
     return (
@@ -46,6 +62,16 @@ export default function App() {
     return <Login />;
   }
 
-  return <Dashboard user={user} onLogout={logout} />;
+  if (!is2faVerified) {
+    return (
+      <TwoFactorScreen 
+        user={user} 
+        onSuccess={() => setIs2faVerified(true)} 
+        onLogout={handleLogout} 
+      />
+    );
+  }
+
+  return <Dashboard user={user} onLogout={handleLogout} />;
 }
 

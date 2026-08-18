@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { doc, writeBatch, collection, setDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import TwoFactorAdminSection from './TwoFactorAdminSection';
 
 const FILE_NAMES = [
   'manifest.json', 'students.json', 'graduates.json', 'blacklist.json', 
@@ -700,6 +701,9 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
             </div>
           ) : (
             <div className="flex flex-col gap-6">
+              {/* Управление 2FA */}
+              <TwoFactorAdminSection />
+
               {/* Точечная очистка */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-amber-900 shadow-sm">
                 <h3 className="font-bold text-base text-amber-800 mb-1">Точечная очистка: удаление дубликатов</h3>

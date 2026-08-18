@@ -4,7 +4,8 @@ import { Search, Plus, Trash2, X, Filter, ChevronDown } from 'lucide-react';
 import { useSort } from '../lib/useSort';
 import { usePagination } from '../lib/usePagination';
 import Pagination from './Pagination';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
+import { writeBatch, doc, collection } from 'firebase/firestore';
 import { useResizableColumns } from '../lib/useResizableColumns';
 import { canonStatus, STANDARD_STATUSES, ACTIVE_MENTORS, canonMentor } from '../lib/status';
 import { getStudentPlan, countUsedCalls, getCurrentMonth, getMissedCalls, getStudentDebtsWithSettlement, StudentDebt, countBonusCalls } from '../lib/quota';
@@ -497,50 +498,124 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
   // Групповое выделение студентов
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatusToApply, setBulkStatusToApply] = useState('');
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
+  const [bulkFeedback, setBulkFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Сброс выделения при изменении фильтров, поиска или вкладки
   useEffect(() => {
     setSelectedIds(new Set());
     setBulkStatusToApply('');
+    setBulkFeedback(null);
   }, [collectionName, statusFilter, search, dynamicFilters]);
 
   const handleApplyBulkStatus = async () => {
-    if (!bulkStatusToApply || selectedIds.size === 0) return;
+    if (!bulkStatusToApply || selectedIds.size === 0 || isBulkUpdating) return;
 
-    const count = selectedIds.size;
-    const confirmMsg = `Изменить статус у ${count} студентов на "${bulkStatusToApply}"?`;
-    if (!confirm(confirmMsg)) return;
+    // Safely match student IDs against selectedIds
+    const selectedStudents = students.filter((s: any) => {
+      if (!s || !s.id) return false;
+      return selectedIds.has(s.id) || selectedIds.has(String(s.id));
+    });
 
-    const selectedStudents = students.filter((s: any) => selectedIds.has(s.id));
-
-    for (const s of selectedStudents) {
-      const oldStatus = canonStatus(s['Статус']) || '—';
-      if (oldStatus === bulkStatusToApply) continue;
-
-      const updatedStudent = {
-        ...s,
-        'Статус': bulkStatusToApply
-      };
-
-      await createRecord('logs', {
-        timestamp: new Date().toISOString(),
-        author: auth.currentUser?.email || 'Неизвестный',
-        studentId: s.id,
-        studentFio: String(s['ФИО'] || s['fio'] || 'Без ФИО').trim(),
-        changes: [
-          {
-            field: 'Статус (Групповое изменение)',
-            oldValue: oldStatus,
-            newValue: bulkStatusToApply
-          }
-        ]
-      });
-
-      await updateRecord(collectionName, s.id, updatedStudent);
+    if (selectedStudents.length === 0) {
+      const errorText = 'Ошибка: Не удалось сопоставить выбранные записи с базой данных.';
+      setBulkFeedback({ type: 'error', message: errorText });
+      alert(errorText);
+      return;
     }
 
-    setSelectedIds(new Set());
-    setBulkStatusToApply('');
+    const count = selectedStudents.length;
+    const confirmMsg = `Изменить статус у ${count} выбранных студентов на "${bulkStatusToApply}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsBulkUpdating(true);
+    setBulkProgress(`0/${count}`);
+    setBulkFeedback(null);
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    try {
+      // Chunk into batches of 200 (2 ops per student: student doc + log doc = 400 ops <= 500 Firestore limit)
+      const chunkSize = 200;
+      for (let i = 0; i < selectedStudents.length; i += chunkSize) {
+        const chunk = selectedStudents.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        let batchHasOperations = false;
+
+        for (const s of chunk) {
+          const oldStatus = canonStatus(s['Статус'] || s['status']) || '—';
+          if (oldStatus === bulkStatusToApply) {
+            skippedCount++;
+            continue;
+          }
+
+          // 1) Student Doc update payload
+          const studentRef = doc(db, collectionName, s.id);
+          const updatePayload: Record<string, any> = {
+            'Статус': bulkStatusToApply
+          };
+          if ('status' in s) {
+            updatePayload['status'] = bulkStatusToApply;
+          }
+          batch.update(studentRef, updatePayload);
+
+          // 2) Log Doc creation
+          const logRef = doc(collection(db, 'logs'));
+          const logPayload = {
+            id: logRef.id,
+            timestamp: new Date().toISOString(),
+            author: auth.currentUser?.email || 'Неизвестный',
+            studentId: String(s.id),
+            studentFio: String(s['ФИО'] || s['fio'] || s['fio_student'] || 'Без ФИО').trim(),
+            changes: [
+              {
+                field: 'Статус (Групповое изменение)',
+                oldValue: oldStatus,
+                newValue: bulkStatusToApply
+              }
+            ]
+          };
+          batch.set(logRef, logPayload);
+
+          updatedCount++;
+          batchHasOperations = true;
+        }
+
+        if (batchHasOperations) {
+          setBulkProgress(`${Math.min(i + chunkSize, selectedStudents.length)}/${selectedStudents.length}`);
+          await batch.commit();
+        }
+      }
+
+      const msgParts = [];
+      if (updatedCount > 0) {
+        msgParts.push(`Статус успешно изменен у ${updatedCount} студентов.`);
+      }
+      if (skippedCount > 0) {
+        msgParts.push(`Пропущено ${skippedCount} (уже имели статус "${bulkStatusToApply}").`);
+      }
+      if (msgParts.length === 0) {
+        msgParts.push(`Все выбранные студенты уже имели статус "${bulkStatusToApply}".`);
+      }
+
+      const finalMessage = msgParts.join(' ');
+      setBulkFeedback({ type: 'success', message: finalMessage });
+      alert(finalMessage);
+
+      setSelectedIds(new Set());
+      setBulkStatusToApply('');
+
+    } catch (err: any) {
+      console.error('Ошибка при массовом изменении статуса:', err);
+      const errMsg = `Ошибка при сохранении массовых изменений: ${err.message || 'Ошибка сети/доступ к Firestore'}`;
+      setBulkFeedback({ type: 'error', message: errMsg });
+      alert(errMsg);
+    } finally {
+      setIsBulkUpdating(false);
+      setBulkProgress('');
+    }
   };
 
   const { handleSort, renderSortIcon, sortData } = useSort();
@@ -760,6 +835,25 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
              </div>
 
              {/* Панель фильтров */}
+              {/* Уведомление о массовой операции */}
+              {bulkFeedback && (
+                <div className={`p-3 rounded-lg text-xs flex items-center justify-between font-medium shadow-xs animate-in fade-in ${
+                  bulkFeedback.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                    : 'bg-rose-50 text-rose-800 border border-rose-200'
+                }`}>
+                  <span>{bulkFeedback.message}</span>
+                  <button 
+                    type="button" 
+                    onClick={() => setBulkFeedback(null)} 
+                    className="text-slate-400 hover:text-slate-700 font-bold ml-2 cursor-pointer"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+
+              {/* Панель фильтров */}
              {isFilterPanelOpen && (
                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 flex flex-col gap-3 transition-all animate-in fade-in duration-150 shadow-inner">
                  <div className="flex justify-between items-center border-b border-slate-200 pb-2">
@@ -1063,7 +1157,8 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
             <select
               value={bulkStatusToApply}
               onChange={(e) => setBulkStatusToApply(e.target.value)}
-              className="bg-slate-800 border border-slate-700 text-white rounded px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium cursor-pointer"
+              disabled={isBulkUpdating}
+              className="bg-slate-800 border border-slate-700 text-white rounded px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium cursor-pointer disabled:opacity-50"
             >
               <option value="">Выберите статус...</option>
               {STANDARD_STATUSES.map(st => (
@@ -1073,14 +1168,21 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
             
             <button
               onClick={handleApplyBulkStatus}
-              disabled={!bulkStatusToApply}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors ${
-                bulkStatusToApply 
-                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+              disabled={!bulkStatusToApply || isBulkUpdating}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-colors flex items-center gap-2 ${
+                bulkStatusToApply && !isBulkUpdating
+                  ? 'bg-blue-600 text-white hover:bg-blue-700 cursor-pointer' 
                   : 'bg-slate-800 text-slate-500 cursor-not-allowed'
               }`}
             >
-              Изменить статус
+              {isBulkUpdating ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Сохранение ({bulkProgress})...</span>
+                </>
+              ) : (
+                <span>Изменить статус</span>
+              )}
             </button>
           </div>
 
@@ -1088,7 +1190,8 @@ function RegistryView({ targetStudent, collectionName }: { targetStudent?: any, 
 
           <button
             onClick={() => setSelectedIds(new Set())}
-            className="text-xs text-slate-400 hover:text-white font-medium transition-colors"
+            disabled={isBulkUpdating}
+            className="text-xs text-slate-400 hover:text-white font-medium transition-colors disabled:opacity-50 cursor-pointer"
           >
             Отменить выбор
           </button>
