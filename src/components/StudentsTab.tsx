@@ -1777,7 +1777,7 @@ function StudentPanel({ student, collectionName, allRecords, onClose }: { studen
                 <div className="flex justify-between items-center pt-1.5 border-t border-gray-200/60">
                   <span className="text-gray-600 font-medium">С Герчиком:</span>
                   <span className="font-bold text-gray-900">
-                    {usedGerchik} / {plan.planGerchik || 18}
+                    {usedGerchik} / {plan.planGerchik}
                   </span>
                 </div>
               )}

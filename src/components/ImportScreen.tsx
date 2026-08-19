@@ -1,7 +1,30 @@
 import { useState } from 'react';
-import { doc, writeBatch, collection, setDoc, getDocs } from 'firebase/firestore';
+import { doc, writeBatch, collection, setDoc, getDocs, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import TwoFactorAdminSection from './TwoFactorAdminSection';
+
+const TARGET_COMMENT_STUDENT_IDS = [
+  'e0739f7d-103f-4d5c-bd52-013263e81e8d',
+  '71cfc7df-6695-4a9f-b316-65078e29f22c',
+  '27acbef1-659a-48e3-8b65-66fb05b731e0',
+  'e66d4b75-8237-49a0-88b3-4860d30aafc7',
+  'be726518-cb02-4af7-82fa-fb69a08a9ae1',
+  '396e00f6-9ea0-4f09-9aed-c328de5b6f9b',
+  '9ee359ac-d165-49d2-9cab-ea28f0d4c719',
+  'da37b298-49de-4b72-ba5b-1474ddb49e97',
+  '3b4ed312-326c-43be-8517-1025c6742edd',
+  '24730185-6243-49b9-b7d4-6d77615bae9a',
+  '9dc61651-04c5-4eed-9f10-62c83249d931',
+  '34aaa07f-fa8b-402e-991c-038ef9976390',
+  '5335c369-bbb3-422c-9a11-bf845f6e29eb',
+  '103d2e78-8bfd-47b4-8914-0a997ad5be85',
+  'cd8e6875-3a7a-472b-8852-4e10ab136833',
+  'c19c16d2-79b3-4694-84c6-37f88293298e',
+  '137e95bf-b7ee-46e8-8bbe-438f7bf29abe',
+  '46303e05-d00e-40e8-a3e1-3581005189ea',
+  '506d5f61-de29-4c3b-9a1e-ff52d83d5b3c',
+  '79c7f86c-d030-47a9-9e4e-20e28f7b8d15'
+];
 
 const FILE_NAMES = [
   'manifest.json', 'students.json', 'graduates.json', 'blacklist.json', 
@@ -222,6 +245,68 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
     } catch (e: any) {
       alert("Ошибка при точечной очистке созвонов: " + e.message);
       setLoading(false);
+    }
+  };
+
+  const handleTargetedCommentUpdate = async () => {
+    const totalCount = TARGET_COMMENT_STUDENT_IDS.length;
+    const confirmed = confirm(
+      `Запуск добавления пометки ("Спец условия: +2 созвона (Эксперт)") для ${totalCount} карточек студентов из списка ID.\n\n` +
+      `КРИТИЧНО: Будет выполнено MERGE-обновление (изменяется ТОЛЬКО поле "Комментарий", остальные поля и статусы НЕ затронутся).\n\n` +
+      `Вы действительно хотите продолжить?`
+    );
+
+    if (!confirmed) return;
+
+    setLoading(true);
+    setProgress(0);
+    setLog([]);
+    addLog("=== НАЧАЛО ТОЧЕЧНОГО ОБНОВЛЕНИЯ КОММЕНТАРИЕВ (20 карточек) ===");
+    addLog(`Запрошена обработка ${totalCount} карточек по списку ID...`);
+
+    let updatedCount = 0;
+    let notFoundCount = 0;
+    let processed = 0;
+
+    const NOTE = "Спец условия: +2 созвона (Эксперт)";
+
+    try {
+      for (const studentId of TARGET_COMMENT_STUDENT_IDS) {
+        processed++;
+        const docRef = doc(db, 'students', studentId);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const fio = String(data['ФИО'] || data.fio || data.fio_student || 'Без ФИО').trim();
+          const existingComment = String(data['Комментарий'] || data.comment || '').trim();
+
+          if (existingComment.includes(NOTE)) {
+            addLog(`[УЖЕ ЕСТЬ] ID: ${studentId} | ФИО: ${fio} — пометка уже присутствует.`);
+            updatedCount++;
+          } else {
+            const newComment = existingComment ? `${existingComment}\n${NOTE}` : NOTE;
+            // setDoc with { merge: true } updates ONLY the specified 'Комментарий' field
+            await setDoc(docRef, { 'Комментарий': newComment }, { merge: true });
+            addLog(`[ОБНОВЛЕНО] ID: ${studentId} | ФИО: ${fio} | Комментарий: "${newComment}"`);
+            updatedCount++;
+          }
+        } else {
+          addLog(`[НЕ НАЙДЕНО] ID: ${studentId} — карточка отсутствует в коллекции students.`);
+          notFoundCount++;
+        }
+
+        setProgress(Math.round((processed / totalCount) * 100));
+      }
+
+      setProgress(100);
+      const summaryMsg = `Обновлено ${updatedCount} карточек из ${totalCount}. Не найдено: ${notFoundCount}.`;
+      addLog(`=== ИТОГ: ${summaryMsg} ===`);
+      alert(summaryMsg);
+
+    } catch (e: any) {
+      console.error(e);
+      alert("Ошибка при точечном обновлении комментариев: " + e.message);
     }
   };
 
@@ -608,14 +693,23 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
         <div className="w-full max-w-md font-sans">
           <div className="h-4 w-full bg-gray-200 rounded-full overflow-hidden">
             <div 
-              className="h-full bg-red-600 transition-all duration-300"
+              className="h-full bg-blue-600 transition-all duration-300"
               style={{ width: `${progress}%` }}
             />
           </div>
           <p className="text-center mt-2 text-sm text-gray-600">{progress}% завершено</p>
-          <div className="mt-4 p-3 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600 max-h-48 overflow-auto font-mono flex flex-col gap-1">
+          <div className="mt-4 p-3 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-600 max-h-64 overflow-auto font-mono flex flex-col gap-1">
             {log.map((l, i) => <div key={i}>{l}</div>)}
           </div>
+          {progress === 100 && (
+            <button
+              type="button"
+              onClick={() => setLoading(false)}
+              className="mt-4 w-full bg-slate-800 hover:bg-slate-900 text-white py-2.5 rounded-lg font-semibold text-xs transition-all cursor-pointer shadow-sm"
+            >
+              Закрыть лог и вернуться к настройкам
+            </button>
+          )}
         </div>
       ) : (
         <div className="w-full max-w-lg font-sans">
@@ -731,6 +825,21 @@ export default function ImportScreen({ onDone }: { onDone: () => void }) {
                   className="w-full bg-amber-600 hover:bg-amber-700 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm shadow-amber-200 cursor-pointer"
                 >
                   Найти и удалить плоские групповые (601 запись)
+                </button>
+              </div>
+
+              {/* Точечное обновление комментариев (20 карточек) */}
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-blue-900 shadow-sm">
+                <h3 className="font-bold text-base text-blue-800 mb-1">Точечное обновление: спец условия для 20 карточек</h3>
+                <p className="text-xs text-blue-700 leading-relaxed mb-4">
+                  Эта функция добавит пометку <code className="bg-blue-100 px-1 py-0.5 rounded font-mono font-semibold">"Спец условия: +2 созвона (Эксперт)"</code> в поле <code className="bg-blue-100 px-1 py-0.5 rounded font-mono font-semibold">Комментарий</code> у 20 карточек студентов по их ID из списка. Выполняется частичное MERGE-обновление (статусы и остальные поля останутся нетронутыми).
+                </p>
+                <button
+                  type="button"
+                  onClick={handleTargetedCommentUpdate}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-semibold text-sm transition-all shadow-sm shadow-blue-200 cursor-pointer"
+                >
+                  Добавить пометку спец условий (20 карточек)
                 </button>
               </div>
 

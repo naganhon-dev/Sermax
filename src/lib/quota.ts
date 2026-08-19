@@ -32,15 +32,14 @@ export function getStudentPlan(student: any): StudentPlan | null {
 
   // 1. Если "Пакет обучения" начинается со слова "Наставничество"
   if (lowerPkg.startsWith('наставничество')) {
-    const isBlack = lowerPkg.includes('герчик');
     return {
       product: 'Наставничество',
       planMentor: 12,
-      blackVersion: isBlack,
+      blackVersion: false,
       planGerchik: 0,
       продукт: 'Наставничество',
       планМентор: 12,
-      blackВерсия: isBlack,
+      blackВерсия: false,
       планГерчик: 0,
     };
   }
@@ -51,11 +50,11 @@ export function getStudentPlan(student: any): StudentPlan | null {
     product: 'Эволюция',
     planMentor: 4,
     blackVersion: isBlack,
-    planGerchik: 18,
+    planGerchik: isBlack ? 18 : 0,
     продукт: 'Эволюция',
     планМентор: 4,
     blackВерсия: isBlack,
-    планГерчик: 18,
+    планГерчик: isBlack ? 18 : 0,
   };
 }
 

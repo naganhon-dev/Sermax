@@ -1,7 +1,17 @@
 import { useState, useMemo } from 'react';
 import { useCollection } from '../lib/useCollection';
-import { Users, Phone, Clock, FileText, Layers, Calendar, ChevronRight, Coins, ShieldAlert } from 'lucide-react';
+import { Users, Phone, Clock, FileText, Layers, Calendar, ChevronRight, Coins, ShieldAlert, AlertTriangle, Video } from 'lucide-react';
 import { canonStatus } from '../lib/status';
+import { ACTIVE_MENTORS, canonMentor } from '../lib/mentors';
+import {
+  parseDate,
+  getStudentPlan,
+  getCurrentMonth,
+  getMonthlyPlan,
+  countUsedCalls,
+  getStudentDebtsWithSettlement,
+  isMonthFrozen
+} from '../lib/quota';
 
 const MONTH_NAMES = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -12,37 +22,44 @@ export default function WorkloadTab() {
   const { data: students } = useCollection('students');
   const { data: calls } = useCollection('calls');
   const { data: activities } = useCollection('activities');
-  const { data: amgEntries } = useCollection('amg_entries');
-  const { data: amgMeta } = useCollection('amg_meta');
 
   const [selectedMentor, setSelectedMentor] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
 
   // 1. Gather all unique mentors from students, calls, and activities
   const mentorsList = useMemo(() => {
     const mSet = new Set<string>();
+    const safeStudents = Array.isArray(students) ? students : [];
+    const safeCalls = Array.isArray(calls) ? calls : [];
+    const safeActivities = Array.isArray(activities) ? activities : [];
 
-    students.forEach((s: any) => {
-      const m = s['Ментор'] || s['ментор'];
+    safeStudents.forEach((s: any) => {
+      const m = s?.['Ментор'] || s?.['ментор'];
       if (m && typeof m === 'string' && m.trim()) {
-        mSet.add(m.trim());
+        const canonical = canonMentor(m.trim());
+        if (canonical) mSet.add(canonical);
       }
     });
 
-    calls.forEach((c: any) => {
-      const m = c['Ментор'] || c['ментор'] || c['mentor'];
+    safeCalls.forEach((c: any) => {
+      const m = c?.['Ментор'] || c?.['ментор'] || c?.['mentor'];
       if (m && typeof m === 'string' && m.trim()) {
-        mSet.add(m.trim());
+        const canonical = canonMentor(m.trim());
+        if (canonical) mSet.add(canonical);
       }
     });
 
-    activities.forEach((a: any) => {
-      const m = a['Ментор'] || a['ментор'] || a['mentor'];
+    safeActivities.forEach((a: any) => {
+      const m = a?.['Ментор'] || a?.['ментор'] || a?.['mentor'];
       if (m && typeof m === 'string' && m.trim()) {
-        mSet.add(m.trim());
+        const canonical = canonMentor(m.trim());
+        if (canonical) mSet.add(canonical);
       }
     });
 
-    return Array.from(mSet).sort();
+    ACTIVE_MENTORS.forEach(m => mSet.add(m));
+
+    return Array.from(mSet).filter(Boolean).sort();
   }, [students, calls, activities]);
 
   // Set default selected mentor to the first one in the list if empty
@@ -50,133 +67,248 @@ export default function WorkloadTab() {
 
   const isAmgMentor = useMemo(() => {
     if (!activeMentor) return false;
-    const name = activeMentor.trim().toLowerCase();
+    const name = canonMentor(activeMentor).toLowerCase();
     return name === 'герчик' || name === 'амг';
   }, [activeMentor]);
 
-  // AMG statistics (only for mentor "Герчик" / "АМГ")
-  const amgStatsByMonth = useMemo(() => {
-    if (!isAmgMentor) return [];
+  // Robust call month helper
+  const getCallMonth = (c: any): number => {
+    if (!c) return 0;
 
-    const metaDoc = amgMeta.find((m: any) => m.id === 'slots') || amgMeta[0];
-    const slotsObj = metaDoc?.['слоты'] || metaDoc?.['slots'] || metaDoc?.['data'] || {};
+    try {
+      // 1. Try parsing the call's date field
+      const rawDate = c['Дата'] ?? c.date ?? c.created_at ?? c.createdAt ?? c['Дата созвона'];
+      const parsed = parseDate(rawDate);
+      if (parsed) {
+        return parsed.getMonth() + 1; // 1-12
+      }
 
-    return MONTH_NAMES.map((monthName) => {
-      const monthEntries = amgEntries.filter((e: any) => {
-        const m = e['Месяц'] || e.month;
-        return m === monthName;
+      // 2. Direct string date fallback
+      if (typeof rawDate === 'string' && rawDate.trim()) {
+        const str = rawDate.trim();
+        if (str.includes('.')) {
+          const parts = str.split('.');
+          const mNum = Number(parts[1]);
+          if (mNum >= 1 && mNum <= 12) return mNum;
+        } else if (str.includes('-')) {
+          const parts = str.split('-');
+          const mNum = Number(parts[1]);
+          if (mNum >= 1 && mNum <= 12) return mNum;
+        }
+      }
+
+      // 3. Fallback to direct 'Месяц' field if numeric 1-12
+      const rawMonth = c['Месяц'] ?? c.month;
+      if (rawMonth !== undefined && rawMonth !== null && rawMonth !== '') {
+        const num = Number(rawMonth);
+        if (!isNaN(num) && num >= 1 && num <= 12) {
+          return num;
+        }
+      }
+    } catch (e) {
+      console.error('Error in getCallMonth:', e);
+    }
+
+    return 0;
+  };
+
+  // Helper to extract duration in minutes safely
+  const getCallDurationMinutes = (c: any): number => {
+    if (!c || typeof c !== 'object') return 0;
+    try {
+      const raw = c['Длительность мин'] ?? c['Длительность'] ?? c['длительность'] ?? c['Длительность, мин'] ?? c['Длительность (мин)'] ?? c.duration ?? c.duration_minutes ?? c.durationMinutes ?? c['Продолжительность'] ?? c['продолжительность'];
+      if (raw !== undefined && raw !== null && raw !== '') {
+        if (typeof raw === 'number' && !isNaN(raw)) return raw > 0 ? raw : 30;
+        const str = String(raw).trim();
+        const parsed = parseFloat(str.replace(/[^\d.]/g, ''));
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Error in getCallDurationMinutes:', e);
+    }
+    return 30; // Standard default call duration in minutes
+  };
+
+  // AMG statistics (only for mentor "Герчик" / "АМГ") based on real student quota/debts/calls
+  const amgData = useMemo(() => {
+    if (!isAmgMentor) return { amgSummary: null, amgStatsByMonth: [] };
+
+    try {
+      const safeStudents = Array.isArray(students) ? students : [];
+      const safeCalls = Array.isArray(calls) ? calls : [];
+      const currentYear = new Date().getFullYear();
+
+      // 1. Total active (unsettled) Gerchik debts across ALL students in the system
+      let activeGerchikDebtsTotal = 0;
+
+      // 2. Total unique students related to Gerchik (plan, fact calls, or debts)
+      const gerchikStudentsSet = new Set<string>();
+
+      safeStudents.forEach((s: any) => {
+        if (!s) return;
+        if (canonStatus(s['Статус']) !== 'Учится') return;
+
+        const studentId = String(s.id || s['Почта'] || s['ФИО'] || '').trim().toLowerCase();
+
+        // 1. Debts with Gerchik
+        const debts = getStudentDebtsWithSettlement(s, safeCalls) || [];
+        const activeGerchikDebts = debts.filter(d => d.type === 'gerchik' && d.status !== 'settled');
+        activeGerchikDebtsTotal += activeGerchikDebts.length;
+
+        // 2. Current plan with Gerchik in student's current study month
+        const currentStudyMonth = getCurrentMonth(s);
+        let hasCurrentGerchikPlan = false;
+        if (currentStudyMonth && currentStudyMonth >= 1 && !isMonthFrozen(s, currentStudyMonth)) {
+          const { gerchikPlan } = getMonthlyPlan(s, currentStudyMonth);
+          hasCurrentGerchikPlan = (gerchikPlan || 0) > 0;
+        }
+
+        const isCurrentlyRelatedToGerchik = hasCurrentGerchikPlan || activeGerchikDebts.length > 0;
+
+        if (studentId && isCurrentlyRelatedToGerchik) {
+          gerchikStudentsSet.add(studentId);
+        }
       });
 
-      const studentsCount = monthEntries.length;
+      const totalStudentsCount = gerchikStudentsSet.size;
 
-      const totalDebts = monthEntries.reduce((acc: number, curr: any) => {
-        const val = curr['Долг'] ?? curr['Долги'] ?? curr['debts'] ?? '';
-        const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
-        return acc + parsed;
-      }, 0);
+      // 3. Selected month metrics
+      const selectedMonthName = MONTH_NAMES[selectedMonth - 1] || MONTH_NAMES[0];
+      const selectedMonthRefDate = new Date(currentYear, Math.max(0, selectedMonth - 1), 15);
 
-      const monthSlots = slotsObj[monthName] || {};
-      const plan = monthSlots['Планово'] !== undefined ? monthSlots['Планово'] : (monthSlots['plan'] !== undefined ? monthSlots['plan'] : '—');
-      const debts = monthSlots['С долгами'] !== undefined ? monthSlots['С долгами'] : (monthSlots['debts'] !== undefined ? monthSlots['debts'] : '—');
+      let selectedMonthPlanned = 0;
+      safeStudents.forEach((s: any) => {
+        if (!s || canonStatus(s['Статус']) !== 'Учится') return;
+        const studyMonth = getCurrentMonth(s, selectedMonthRefDate);
+        if (studyMonth && studyMonth >= 1 && !isMonthFrozen(s, studyMonth)) {
+          const { gerchikPlan } = getMonthlyPlan(s, studyMonth);
+          selectedMonthPlanned += (gerchikPlan || 0);
+        }
+      });
 
-      return {
-        monthName,
-        studentsCount,
-        totalDebts,
-        plan,
-        debts,
+      // Conducted Gerchik calls in selectedMonth
+      const selectedMonthConducted = safeCalls.filter((c: any) => {
+        if (!c) return false;
+        const m = canonMentor(c['Ментор'] || c['ментор'] || c.mentor || '');
+        return m === 'Герчик' && getCallMonth(c) === selectedMonth;
+      }).length;
+
+      const selectedMonthUnclosed = Math.max(0, selectedMonthPlanned - selectedMonthConducted);
+
+      const amgSummary = {
+        totalDebts: activeGerchikDebtsTotal,
+        totalStudentsCount,
+        selectedMonthName,
+        plan: selectedMonthPlanned,
+        conducted: selectedMonthConducted,
+        debts: selectedMonthUnclosed,
+        isOverloaded: selectedMonthPlanned > 20
       };
-    });
-  }, [amgEntries, amgMeta, isAmgMentor]);
 
-  const amgSummary = useMemo(() => {
-    if (!isAmgMentor) return null;
+      // 4. Monthly breakdown for all 12 months
+      const amgStatsByMonth = MONTH_NAMES.map((monthName, idx) => {
+        const mNum = idx + 1;
+        const monthRefDate = new Date(currentYear, mNum - 1, 15);
 
-    const totalDebts = amgEntries.reduce((acc: number, curr: any) => {
-      const val = curr['Долг'] ?? curr['Долги'] ?? curr['debts'] ?? '';
-      const parsed = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
-      return acc + parsed;
-    }, 0);
+        let planned = 0;
+        const monthStudentsSet = new Set<string>();
 
-    const totalStudentsCount = amgEntries.length;
+        safeStudents.forEach((s: any) => {
+          if (!s) return;
+          const studentId = String(s.id || s['Почта'] || s['ФИО'] || '').trim().toLowerCase();
 
-    const currentMonthName = MONTH_NAMES[new Date().getMonth()];
-    const metaDoc = amgMeta.find((m: any) => m.id === 'slots') || amgMeta[0];
-    const slotsObj = metaDoc?.['слоты'] || metaDoc?.['slots'] || metaDoc?.['data'] || {};
-    const monthSlots = slotsObj[currentMonthName] || {};
-    const plan = monthSlots['Планово'] !== undefined ? monthSlots['Планово'] : (monthSlots['plan'] !== undefined ? monthSlots['plan'] : '—');
-    const debts = monthSlots['С долгами'] !== undefined ? monthSlots['С долгами'] : (monthSlots['debts'] !== undefined ? monthSlots['debts'] : '—');
+          if (canonStatus(s['Статус']) === 'Учится') {
+            const studyMonth = getCurrentMonth(s, monthRefDate);
+            if (studyMonth && studyMonth >= 1 && !isMonthFrozen(s, studyMonth)) {
+              const { gerchikPlan } = getMonthlyPlan(s, studyMonth);
+              if (gerchikPlan > 0) {
+                planned += gerchikPlan;
+                if (studentId) monthStudentsSet.add(studentId);
+              }
+            }
+          }
+        });
 
-    return {
-      totalDebts,
-      totalStudentsCount,
-      currentMonthName,
-      plan,
-      debts,
-    };
-  }, [amgEntries, amgMeta, isAmgMentor]);
+        const conducted = safeCalls.filter((c: any) => {
+          if (!c) return false;
+          const m = canonMentor(c['Ментор'] || c['ментор'] || c.mentor || '');
+          if (m === 'Герчик' && getCallMonth(c) === mNum) {
+            const studentId = String(c.student_id || c.studentId || c['Почта'] || c['ФИО'] || '').trim().toLowerCase();
+            if (studentId) monthStudentsSet.add(studentId);
+            return true;
+          }
+          return false;
+        }).length;
 
-  // 2. Metrics Calculations
-  const activeStudentsCount = useMemo(() => {
-    if (!activeMentor) return 0;
-    return students.filter((s: any) => {
-      const m = (s['Ментор'] || s['ментор'] || '').trim();
-      const status = canonStatus(s['Статус']);
-      return m === activeMentor && status.includes('Учится');
-    }).length;
-  }, [students, activeMentor]);
+        const unclosed = Math.max(0, planned - conducted);
 
-  const uniqueGroupsCount = useMemo(() => {
-    if (!activeMentor) return 0;
-    const gSet = new Set<string>();
-    
-    students.forEach((s: any) => {
-      const m = (s['Ментор'] || s['ментор'] || '').trim();
-      const group = s['Группа'] || s['группа'] || '';
-      if (m === activeMentor && group) {
-        gSet.add(group);
-      }
-    });
+        return {
+          monthName,
+          monthNum: mNum,
+          studentsCount: monthStudentsSet.size,
+          totalDebts: unclosed,
+          plan: planned,
+          conducted,
+          debts: unclosed,
+        };
+      });
 
-    calls.forEach((c: any) => {
-      const m = (c['Ментор'] || c['ментор'] || c['mentor'] || '').trim();
-      const group = c['Группа'] || c['группа'] || '';
-      if (m === activeMentor && group) {
-        gSet.add(group);
-      }
-    });
+      return { amgSummary, amgStatsByMonth };
+    } catch (err) {
+      console.error('Error calculating AMG metrics:', err);
+      return {
+        amgSummary: {
+          totalDebts: 0,
+          totalStudentsCount: 0,
+          selectedMonthName: MONTH_NAMES[selectedMonth - 1] || MONTH_NAMES[0],
+          plan: 0,
+          conducted: 0,
+          debts: 0,
+          isOverloaded: false
+        },
+        amgStatsByMonth: MONTH_NAMES.map((monthName, idx) => ({
+          monthName,
+          monthNum: idx + 1,
+          studentsCount: 0,
+          totalDebts: 0,
+          plan: 0,
+          conducted: 0,
+          debts: 0
+        }))
+      };
+    }
+  }, [students, calls, isAmgMentor, selectedMonth]);
 
-    return gSet.size;
-  }, [students, calls, activeMentor]);
+  const { amgSummary, amgStatsByMonth } = amgData;
 
-  const currentMonthCallsCount = useMemo(() => {
-    if (!activeMentor) return 0;
-    const currentMonthNum = new Date().getMonth() + 1; // 1-12
-    return calls.filter((c: any) => {
-      const m = (c['Ментор'] || c['ментор'] || c['mentor'] || '').trim();
-      const monthNum = Number(c['Месяц']) || 0;
-      return m === activeMentor && monthNum === currentMonthNum;
-    }).length;
-  }, [calls, activeMentor]);
+  // 2. Metrics Calculations for Selected Month
+  const isCurrentMonthSelected = selectedMonth === (new Date().getMonth() + 1);
 
-  const currentMonthHours = useMemo(() => {
-    if (!activeMentor) return 0;
-    const currentMonthNum = new Date().getMonth() + 1; // 1-12
-    const currentCalls = calls.filter((c: any) => {
-      const m = (c['Ментор'] || c['ментор'] || c['mentor'] || '').trim();
-      const monthNum = Number(c['Месяц']) || 0;
-      return m === activeMentor && monthNum === currentMonthNum;
-    });
-    
-    const totalMinutes = currentCalls.reduce((acc, c) => {
-      return acc + (Number(c['Длительность мин']) || 0);
-    }, 0);
+  // Helper to check if a call record is a group call/event
+  const isGroupCall = (c: any): boolean => {
+    if (!c) return false;
+    return (
+      c.is_group === true ||
+      c.isGroup === true ||
+      c.is_group_event === true ||
+      (Array.isArray(c.participants) && c.participants.length > 0)
+    );
+  };
 
-    return Number((totalMinutes / 60).toFixed(1));
-  }, [calls, activeMentor]);
+  // Helper to check if an activity record is a call type (to exclude from "Прочие активности")
+  const isCallActivity = (a: any): boolean => {
+    if (!a) return false;
+    const t = String(a['Тип активности'] || a['тип активности'] || a['Тип'] || a.type || '').trim().toLowerCase();
+    return (
+      t.includes('индивидуальный созвон') ||
+      t.includes('групповой созвон') ||
+      t === 'созвон'
+    );
+  };
 
   // Robust activity month helper
   const getMonthFromActivity = (a: any): number => {
+    if (!a) return 0;
     const dateStr = a['Дата проведения'] || a['date'] || '';
     if (dateStr) {
       const parts = dateStr.includes('.') ? dateStr.split('.') : dateStr.split('-');
@@ -202,28 +334,127 @@ export default function WorkloadTab() {
     return 0;
   };
 
-  // 3. Monthly statistics: calls, activities, hours
+  const selectedMonthCalls = useMemo(() => {
+    if (!activeMentor) return [];
+    const target = canonMentor(activeMentor);
+    const safeCalls = Array.isArray(calls) ? calls : [];
+    return safeCalls.filter((c: any) => {
+      const m = canonMentor(c?.['Ментор'] || c?.['ментор'] || c?.['mentor'] || '');
+      if (m !== target) return false;
+      const monthNum = getCallMonth(c);
+      return monthNum === selectedMonth;
+    });
+  }, [calls, activeMentor, selectedMonth]);
+
+  const selectedMonthIndCallsCount = useMemo(() => {
+    return selectedMonthCalls.filter(c => !isGroupCall(c)).length;
+  }, [selectedMonthCalls]);
+
+  const selectedMonthGroupEventsCount = useMemo(() => {
+    return selectedMonthCalls.filter(c => isGroupCall(c)).length;
+  }, [selectedMonthCalls]);
+
+  const selectedMonthOtherActivitiesCount = useMemo(() => {
+    if (!activeMentor) return 0;
+    const target = canonMentor(activeMentor);
+    const safeActivities = Array.isArray(activities) ? activities : [];
+    return safeActivities.reduce((acc, a: any) => {
+      const m = canonMentor(a?.['Ментор'] || a?.['ментор'] || a?.['mentor'] || '');
+      if (m !== target) return acc;
+      if (isCallActivity(a)) return acc;
+      if (getMonthFromActivity(a) !== selectedMonth) return acc;
+      const count = Number(a?.['Кол-во'] || a?.['Кол-во активностей']) || 1;
+      return acc + count;
+    }, 0);
+  }, [activities, activeMentor, selectedMonth]);
+
+  const selectedMonthHours = useMemo(() => {
+    const totalMinutes = selectedMonthCalls.reduce((acc, c) => {
+      return acc + getCallDurationMinutes(c);
+    }, 0);
+    return Number((totalMinutes / 60).toFixed(1));
+  }, [selectedMonthCalls]);
+
+  const activeStudentsCount = useMemo(() => {
+    if (!activeMentor) return 0;
+    const target = canonMentor(activeMentor);
+    const sSet = new Set<string>();
+    const safeStudents = Array.isArray(students) ? students : [];
+
+    selectedMonthCalls.forEach((c: any) => {
+      const studentId = c?.student_id || c?.studentId || c?.['Почта'] || c?.email || c?.['ФИО'] || c?.fio;
+      if (studentId) sSet.add(String(studentId).trim().toLowerCase());
+    });
+
+    if (isCurrentMonthSelected) {
+      safeStudents.forEach((s: any) => {
+        const m = canonMentor(s?.['Ментор'] || s?.['ментор'] || '');
+        const status = canonStatus(s?.['Статус']);
+        if (m === target && status.includes('Учится')) {
+          const studentId = s?.id || s?.['Почта'] || s?.['ФИО'];
+          if (studentId) sSet.add(String(studentId).trim().toLowerCase());
+        }
+      });
+    }
+
+    return sSet.size;
+  }, [students, activeMentor, selectedMonthCalls, isCurrentMonthSelected]);
+
+  const uniqueGroupsCount = useMemo(() => {
+    if (!activeMentor) return 0;
+    const target = canonMentor(activeMentor);
+    const gSet = new Set<string>();
+    const safeStudents = Array.isArray(students) ? students : [];
+
+    selectedMonthCalls.forEach((c: any) => {
+      const group = c?.['Группа'] || c?.['группа'] || '';
+      if (group) gSet.add(String(group).trim());
+    });
+
+    if (isCurrentMonthSelected) {
+      safeStudents.forEach((s: any) => {
+        const m = canonMentor(s?.['Ментор'] || s?.['ментор'] || '');
+        const group = s?.['Группа'] || s?.['группа'] || '';
+        const status = canonStatus(s?.['Статус']);
+        if (m === target && group && status.includes('Учится')) {
+          gSet.add(String(group).trim());
+        }
+      });
+    }
+
+    return gSet.size;
+  }, [students, activeMentor, selectedMonthCalls, isCurrentMonthSelected]);
+
+  // 3. Monthly statistics: individual calls, group events, other activities, hours
   const monthlyStats = useMemo(() => {
     const stats = Array.from({ length: 12 }, (_, i) => ({
       monthNum: i + 1,
       monthName: MONTH_NAMES[i],
-      callsCount: 0,
-      activitiesCount: 0,
+      indCallsCount: 0,
+      groupEventsCount: 0,
+      otherActivitiesCount: 0,
       hours: 0,
       mins: 0
     }));
 
     if (!activeMentor) return stats;
+    const target = canonMentor(activeMentor);
+    const safeCalls = Array.isArray(calls) ? calls : [];
+    const safeActivities = Array.isArray(activities) ? activities : [];
 
-    // Calls processing
-    calls.forEach((c: any) => {
-      const m = (c['Ментор'] || c['ментор'] || c['mentor'] || '').trim();
-      if (m !== activeMentor) return;
+    // Calls processing (individual vs group)
+    safeCalls.forEach((c: any) => {
+      const m = canonMentor(c?.['Ментор'] || c?.['ментор'] || c?.['mentor'] || '');
+      if (m !== target) return;
 
-      const monthNum = Number(c['Месяц']) || 0;
+      const monthNum = getCallMonth(c);
       if (monthNum >= 1 && monthNum <= 12) {
-        stats[monthNum - 1].callsCount += 1;
-        stats[monthNum - 1].mins += Number(c['Длительность мин']) || 0;
+        if (isGroupCall(c)) {
+          stats[monthNum - 1].groupEventsCount += 1;
+        } else {
+          stats[monthNum - 1].indCallsCount += 1;
+        }
+        stats[monthNum - 1].mins += getCallDurationMinutes(c);
       }
     });
 
@@ -232,15 +463,16 @@ export default function WorkloadTab() {
       s.hours = Number((s.mins / 60).toFixed(1));
     });
 
-    // Activities processing
-    activities.forEach((a: any) => {
-      const m = (a['Ментор'] || a['ментор'] || a['mentor'] || '').trim();
-      if (m !== activeMentor) return;
+    // Activities processing (excluding individual and group calls)
+    safeActivities.forEach((a: any) => {
+      const m = canonMentor(a?.['Ментор'] || a?.['ментор'] || a?.['mentor'] || '');
+      if (m !== target) return;
+      if (isCallActivity(a)) return;
 
       const monthNum = getMonthFromActivity(a);
       if (monthNum >= 1 && monthNum <= 12) {
         const count = Number(a['Кол-во'] || a['Кол-во активностей']) || 1;
-        stats[monthNum - 1].activitiesCount += count;
+        stats[monthNum - 1].otherActivitiesCount += count;
       }
     });
 
@@ -250,14 +482,16 @@ export default function WorkloadTab() {
   // 4. Educational program breakdown (all and active)
   const programBreakdown = useMemo(() => {
     if (!activeMentor) return [];
+    const target = canonMentor(activeMentor);
     const counts: Record<string, { total: number; active: number }> = {};
+    const safeStudents = Array.isArray(students) ? students : [];
 
-    students.forEach((s: any) => {
-      const m = (s['Ментор'] || s['ментор'] || '').trim();
-      if (m !== activeMentor) return;
+    safeStudents.forEach((s: any) => {
+      const m = canonMentor(s?.['Ментор'] || s?.['ментор'] || '');
+      if (m !== target) return;
 
-      const program = s['Пакет обучения'] || s['пакет обучения'] || 'Не указан';
-      const isActive = canonStatus(s['Статус']).includes('Учится');
+      const program = s?.['Пакет обучения'] || s?.['пакет обучения'] || 'Не указан';
+      const isActive = canonStatus(s?.['Статус']).includes('Учится');
 
       if (!counts[program]) {
         counts[program] = { total: 0, active: 0 };
@@ -309,64 +543,117 @@ export default function WorkloadTab() {
       <div className="flex-1 overflow-auto p-6 space-y-6">
         {activeMentor ? (
           <>
-            {/* Header with selected mentor */}
-            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+            {/* Header with selected mentor and Month Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">{activeMentor}</h1>
                 <p className="text-sm text-slate-500 mt-0.5">Детализированный разрез занятости и учебных активностей</p>
               </div>
-              <div className="px-3 py-1 bg-blue-50 text-blue-800 border border-blue-100 rounded-full text-xs font-semibold uppercase tracking-wider">
-                аналитика нагрузки
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
+                  <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span className="text-xs font-semibold text-slate-500">Месяц:</span>
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                    className="bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    {MONTH_NAMES.map((mName, idx) => {
+                      const mNum = idx + 1;
+                      const isCurrent = mNum === (new Date().getMonth() + 1);
+                      return (
+                        <option key={mNum} value={mNum}>
+                          {mName} {isCurrent ? '(Текущий)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="hidden md:block px-3 py-1 bg-blue-50 text-blue-800 border border-blue-100 rounded-full text-xs font-semibold uppercase tracking-wider">
+                  аналитика нагрузки
+                </div>
               </div>
             </div>
 
             {/* Metrics Dashboard */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
               {/* Active Students Card */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-50 flex items-center justify-center text-green-600 shrink-0">
-                  <Users className="w-6 h-6" />
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                  <Users className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Студентов сейчас</p>
-                  <p className="text-2xl font-bold text-slate-800 mt-1">{activeStudentsCount}</p>
-                  <p className="text-[10px] text-green-600 font-medium mt-0.5">со статусом "Учится"</p>
-                </div>
-              </div>
-
-              {/* Unique Groups Card */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
-                  <Layers className="w-6 h-6" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Активных групп</p>
-                  <p className="text-2xl font-bold text-slate-800 mt-1">{uniqueGroupsCount}</p>
-                  <p className="text-[10px] text-purple-600 font-medium mt-0.5">из записей и созвонов</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                    {isCurrentMonthSelected ? 'Студентов сейчас' : `Студентов (${MONTH_NAMES[selectedMonth - 1]})`}
+                  </p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{activeStudentsCount}</p>
+                  <p className="text-[10px] text-green-600 font-medium truncate mt-0.5">
+                    {isCurrentMonthSelected ? 'со статусом "Учится"' : `созвоны в ${MONTH_NAMES[selectedMonth - 1]}`}
+                  </p>
                 </div>
               </div>
 
-              {/* Current Month Calls */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                  <Phone className="w-6 h-6" />
+              {/* Individual Calls Card */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                  <Phone className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Созвонов в этом месяце</p>
-                  <p className="text-2xl font-bold text-slate-800 mt-1">{currentMonthCallsCount}</p>
-                  <p className="text-[10px] text-blue-600 font-medium mt-0.5">текущий календарный месяц</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                    Инд. созвоны
+                  </p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{selectedMonthIndCallsCount}</p>
+                  <p className="text-[10px] text-blue-600 font-medium truncate mt-0.5">
+                    1-на-1 за {MONTH_NAMES[selectedMonth - 1]}
+                  </p>
                 </div>
               </div>
 
-              {/* Hours in Current Month */}
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                  <Clock className="w-6 h-6" />
+              {/* Group Events Card */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
+                  <Video className="w-5 h-5" />
                 </div>
-                <div>
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Часов в этом месяце</p>
-                  <p className="text-2xl font-bold text-slate-800 mt-1">{currentMonthHours} ч</p>
-                  <p className="text-[10px] text-amber-600 font-medium mt-0.5">суммарно за созвоны</p>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                    Групповые события
+                  </p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{selectedMonthGroupEventsCount}</p>
+                  <p className="text-[10px] text-purple-600 font-medium truncate mt-0.5">
+                    групповые за {MONTH_NAMES[selectedMonth - 1]}
+                  </p>
+                </div>
+              </div>
+
+              {/* Other Activities Card */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                    Прочие активности
+                  </p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{selectedMonthOtherActivitiesCount}</p>
+                  <p className="text-[10px] text-indigo-600 font-medium truncate mt-0.5">
+                    без созвонов за {MONTH_NAMES[selectedMonth - 1]}
+                  </p>
+                </div>
+              </div>
+
+              {/* Hours in Month Card */}
+              <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider truncate">
+                    {isCurrentMonthSelected ? 'Часов в месяце' : `Часов (${MONTH_NAMES[selectedMonth - 1]})`}
+                  </p>
+                  <p className="text-xl font-bold text-slate-800 mt-0.5">{selectedMonthHours} ч</p>
+                  <p className="text-[10px] text-amber-600 font-medium truncate mt-0.5">
+                    все созвоны за {MONTH_NAMES[selectedMonth - 1]}
+                  </p>
                 </div>
               </div>
             </div>
@@ -381,13 +668,26 @@ export default function WorkloadTab() {
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-800 text-base">Показатели АМГ</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Сводная информация из коллекций amg_entries и amg_meta</p>
+                      <p className="text-xs text-slate-500 mt-0.5">Расчёт квот, фактически проведённых созвонов и долгов с Герчиком</p>
                     </div>
                   </div>
                   <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg text-xs font-bold uppercase tracking-wider">
                     Эксклюзивные данные АМГ
                   </span>
                 </div>
+
+                {/* Overload Warning Banner if Month Plan > 20 */}
+                {amgSummary.isOverloaded && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-3 text-amber-800 text-xs">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                    <div>
+                      <span className="font-bold">Внимание: Высокая нагрузка АМГ!</span>
+                      <p className="mt-0.5 text-amber-700">
+                        Плановое количество созвонов с Герчиком на {amgSummary.selectedMonthName.toLowerCase()} ({amgSummary.plan}) превышает исторический лимит в 20 созвонов в месяц.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Summary Metrics */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -418,9 +718,9 @@ export default function WorkloadTab() {
                       <Calendar className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Слоты ({amgSummary.currentMonthName})</p>
-                      <p className="text-sm font-bold text-slate-800 mt-0.5">
-                        Планово: <span className="text-slate-900 font-extrabold">{amgSummary.plan}</span> | Незакрытые: <span className="text-red-600 font-extrabold">{amgSummary.debts}</span>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Слоты ({amgSummary.selectedMonthName})</p>
+                      <p className="text-xs font-bold text-slate-800 mt-0.5">
+                        Планово: <span className="text-slate-900 font-extrabold">{amgSummary.plan}</span> | Проведено: <span className="text-emerald-600 font-extrabold">{amgSummary.conducted}</span> | Незакрытые: <span className="text-red-600 font-extrabold">{amgSummary.debts}</span>
                       </p>
                     </div>
                   </div>
@@ -437,35 +737,35 @@ export default function WorkloadTab() {
                         <tr>
                           <th className="py-2 px-4 text-slate-600 font-semibold">Месяц</th>
                           <th className="py-2 px-4 text-slate-600 font-semibold text-center">Студентов</th>
-                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Незакрытые слоты АМГ</th>
+                          <th className="py-2 px-4 text-slate-600 font-semibold text-center">Проведено созвонов</th>
                           <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: Планово</th>
                           <th className="py-2 px-4 text-slate-600 font-semibold text-center">Слоты: Незакрытые</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {amgStatsByMonth.map((stat) => {
-                          const isCurrent = stat.monthName === amgSummary.currentMonthName;
+                          const isCurrent = stat.monthNum === selectedMonth;
                           return (
-                            <tr key={stat.monthName} className={`hover:bg-slate-50/50 transition-colors ${isCurrent ? 'bg-indigo-50/20 font-medium' : ''}`}>
+                            <tr key={stat.monthName} className={`hover:bg-slate-50/50 transition-colors ${isCurrent ? 'bg-indigo-50/30 font-medium' : ''}`}>
                               <td className="py-2 px-4 text-slate-700 flex items-center gap-1.5">
                                 {stat.monthName}
                                 {isCurrent && (
                                   <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 text-[9px] font-bold rounded">
-                                    Текущий
+                                    Выбран
                                   </span>
                                 )}
                               </td>
                               <td className="py-2 px-4 text-center text-slate-800 font-semibold">
                                 {stat.studentsCount > 0 ? stat.studentsCount : <span className="text-slate-300">—</span>}
                               </td>
-                              <td className="py-2 px-4 text-center text-slate-800 font-semibold">
-                                {stat.totalDebts > 0 ? stat.totalDebts.toLocaleString('ru-RU') : <span className="text-slate-300">—</span>}
+                              <td className="py-2 px-4 text-center text-emerald-700 font-semibold">
+                                {stat.conducted > 0 ? stat.conducted : <span className="text-slate-300">—</span>}
                               </td>
                               <td className="py-2 px-4 text-center text-slate-800 font-semibold">
-                                {stat.plan !== '—' && stat.plan !== '' ? stat.plan : <span className="text-slate-300">—</span>}
+                                {stat.plan > 0 ? stat.plan : <span className="text-slate-300">—</span>}
                               </td>
                               <td className="py-2 px-4 text-center text-red-600 font-semibold">
-                                {stat.debts !== '—' && stat.debts !== '' ? stat.debts : <span className="text-slate-300">—</span>}
+                                {stat.debts > 0 ? stat.debts : <span className="text-slate-300">—</span>}
                               </td>
                             </tr>
                           );
@@ -494,8 +794,9 @@ export default function WorkloadTab() {
                     <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold text-[10px] border-b border-slate-200">
                       <tr>
                         <th className="py-3 px-4 font-semibold text-slate-600">Месяц</th>
-                        <th className="py-3 px-4 font-semibold text-slate-600 text-center">Созвоны</th>
-                        <th className="py-3 px-4 font-semibold text-slate-600 text-center">Активности</th>
+                        <th className="py-3 px-4 font-semibold text-slate-600 text-center">Инд. созвоны</th>
+                        <th className="py-3 px-4 font-semibold text-slate-600 text-center">Групповые</th>
+                        <th className="py-3 px-4 font-semibold text-slate-600 text-center">Прочие активности</th>
                         <th className="py-3 px-4 font-semibold text-slate-600 text-center">Длительность</th>
                       </tr>
                     </thead>
@@ -513,10 +814,13 @@ export default function WorkloadTab() {
                               )}
                             </td>
                             <td className="py-2.5 px-4 text-center text-slate-800 font-semibold">
-                              {stat.callsCount > 0 ? stat.callsCount : <span className="text-slate-300">—</span>}
+                              {stat.indCallsCount > 0 ? stat.indCallsCount : <span className="text-slate-300">—</span>}
                             </td>
-                            <td className="py-2.5 px-4 text-center text-slate-800 font-semibold">
-                              {stat.activitiesCount > 0 ? stat.activitiesCount : <span className="text-slate-300">—</span>}
+                            <td className="py-2.5 px-4 text-center text-purple-700 font-semibold">
+                              {stat.groupEventsCount > 0 ? stat.groupEventsCount : <span className="text-slate-300">—</span>}
+                            </td>
+                            <td className="py-2.5 px-4 text-center text-indigo-700 font-semibold">
+                              {stat.otherActivitiesCount > 0 ? stat.otherActivitiesCount : <span className="text-slate-300">—</span>}
                             </td>
                             <td className="py-2.5 px-4 text-center text-slate-800 font-semibold">
                               {stat.hours > 0 ? `${stat.hours} ч` : <span className="text-slate-300">—</span>}
